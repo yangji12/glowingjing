@@ -1,5 +1,14 @@
 # ResearchMind — AI Research Design Partner
 
+## Quickest way to get started on Mac
+
+1. Press **Command + Space**, type **Terminal**, press **Enter**
+2. Copy the entire contents of `install_researchmind.sh` and paste into Terminal
+3. Press **Enter** — it installs everything and opens ResearchMind in your browser automatically
+4. Enter your Anthropic API key in the sidebar and start chatting
+
+**Next time:** just double-click **"Run ResearchMind.command"** on your Desktop — no Terminal needed.
+
 A web-based research design advisor powered by Claude. Specialized in academic research design for Marketing, Advertising, Communication, HCI, and Computational Social Science.
 
 ## What It Does
