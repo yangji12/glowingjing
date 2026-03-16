@@ -557,11 +557,11 @@ pip3 install -r requirements.txt
 # ── Launch ────────────────────────────────────────────────────────────────────
 echo ""
 echo "=========================================="
-echo "  ResearchMind is ready!"
+echo "  ResearchMind is ready."
 echo "  Your browser will open automatically."
 echo ""
 echo "  Next time: double-click"
-echo "  'Run ResearchMind.command' on your Desktop"
+echo "  Run ResearchMind.command on your Desktop"
 echo "=========================================="
 echo ""
 streamlit run app.py
