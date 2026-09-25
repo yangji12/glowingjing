@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AdLab local server.
+"""Digital Ad Lab local server.
 
 Serves the simulator and provides /api/scan?url=... which fetches a public web page and
 extracts what a Google Ads quick start needs: title, description, keyword ideas, page links
@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 MAX_BYTES = 2_000_000
 TIMEOUT = 8
-USER_AGENT = "Mozilla/5.0 (compatible; AdLabClassroomScanner/1.0)"
+USER_AGENT = "Mozilla/5.0 (compatible; DigitalDigital Ad LabScanner/1.0)"
 
 STOPWORDS = set(
     """a about above after again all also am an and any are as at be because been before being below between both but by
@@ -335,12 +335,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="AdLab classroom server")
+    ap = argparse.ArgumentParser(description="Digital Ad Lab classroom server")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
     httpd = http.server.ThreadingHTTPServer((args.host, args.port), Handler)
-    print("AdLab running at http://%s:%d  (Ctrl+C to stop)" % (args.host if args.host != "0.0.0.0" else "localhost", args.port))
+    print("Digital Ad Lab running at http://%s:%d  (Ctrl+C to stop)" % (args.host if args.host != "0.0.0.0" else "localhost", args.port))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

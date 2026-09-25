@@ -319,7 +319,7 @@
 
   function renderNav() {
     var active = UI.route === 'campaign' ? 'campaigns' : UI.route;
-    document.getElementById('nav').innerHTML = '<div class="brand"><span class="brand-mark">A</span><div><b>AdLab</b><small>Ads practice simulator</small></div></div>' +
+    document.getElementById('nav').innerHTML = '<div class="brand"><span class="brand-mark">D</span><div><b>Digital Ad Lab</b><small>Ads practice simulator</small></div></div>' +
       NAV.map(function (n) {
         var badge = n[0] === 'simulate' ? '<span class="nav-badge">R' + (S.rounds.length + 1) + '</span>' : '';
         return '<a href="#/' + n[0] + '" class="' + (active === n[0] ? 'active' : '') + '"><span class="ico" aria-hidden="true">' + n[1] + '</span>' + n[2] + badge + '</a>';
@@ -1056,7 +1056,7 @@
       '<div class="card"><h3>Save & share</h3><p>Your work is saved automatically in this browser. Export a file to submit it or move to another computer.</p><div class="row wrap">' +
       btn('⬇ Export project (.json)', 'exportJson', null, 'primary') + '<label class="btn">⬆ Import project<input type="file" accept="application/json,.json" data-action-change="importJson" hidden></label>' + (FRAMED ? '' : btn('🖨 Print latest report', 'print')) + '</div></div>' +
       '<div class="card"><h3>Reset</h3><p>Clear simulation rounds but keep your campaigns, or start over completely.</p><div class="row wrap">' + btn('Clear rounds', 'resetRounds', null, 'ghost danger') + btn('Start over', 'resetAll', null, 'danger') + '</div></div>' +
-      '<div class="card"><h3>About</h3><p>AdLab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC; this project is not affiliated with Google.</p></div></div>';
+      '<div class="card"><h3>About</h3><p>Digital Ad Lab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC; this project is not affiliated with Google.</p></div></div>';
   }
 
   // ---------------------------------------------------------------------------
@@ -1084,7 +1084,7 @@
     var v = VIEWS[UI.route] || viewOverview;
     var main = document.getElementById('main');
     main.innerHTML = v();
-    document.title = 'AdLab · ' + ((NAV.find(function (n) { return n[0] === UI.route; }) || [0, 0, 'Campaign editor'])[2]);
+    document.title = 'Digital Ad Lab · ' + ((NAV.find(function (n) { return n[0] === UI.route; }) || [0, 0, 'Campaign editor'])[2]);
     wireImages(main);
     if (keepScroll) window.scrollTo(0, y);
     if (UI.route === 'guidelines' && UI.params[0]) {
@@ -1334,7 +1334,7 @@
     exportCsv: function (el, id) { download(id + '-round' + ((currentRound() || {}).round || 0) + '.csv', csvOf(id), 'text/csv'); },
     exportJson: function () {
       var name = (S.student || 'student').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-      download('adlab-' + name + '-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(S, null, 1), 'application/json');
+      download('digital-ad-lab-' + name + '-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(S, null, 1), 'application/json');
     },
     resetRounds: function (el) { if (armed(el, 'Click again to delete all rounds')) { S.rounds = []; UI.round = null; save(); render(); } },
     resetAll: function (el) { if (armed(el, 'Click again to erase everything')) { S = M.newState(); UI.round = null; save(); location.hash = '#/overview'; render(); } },
@@ -1354,7 +1354,7 @@
         try {
           S = M.migrate(JSON.parse(rd.result));
           save(); UI.round = null; render(); toast('Project imported.');
-        } catch (e) { toast('That file is not a valid AdLab project.'); }
+        } catch (e) { toast('That file is not a valid Digital Ad Lab project.'); }
       };
       rd.readAsText(f);
     }

@@ -1,6 +1,6 @@
 # ResearchMind — AI Research Design Partner
 
-> This repo also contains **[AdLab](ads-simulator/README.md)**, a Google Ads practice simulator for students (`python ads-simulator/server.py`).
+> This repo also contains **[Digital Ad Lab](ads-simulator/README.md)**, a Google Ads practice simulator for students (`python ads-simulator/server.py`).
 
 ## Quickest way to get started on Mac
 

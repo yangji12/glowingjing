@@ -1,8 +1,8 @@
-# AdLab: Google Ads practice simulator
+# Digital Ad Lab: Google Ads practice simulator
 
-AdLab is a classroom simulator. Students build Search, Display, YouTube (Video) and Shopping campaigns the way they would in Google Ads. They run simulated 30-day rounds and get results back: clicks, impressions, CTR, CPC, CPA, ROAS, revenue and website analytics. Each round also gives a score and specific coaching tied to baseline Google Ads guidelines.
+Digital Ad Lab is a classroom simulator. Students build Search, Display, YouTube (Video) and Shopping campaigns the way they would in Google Ads. They run simulated 30-day rounds and get results back: clicks, impressions, CTR, CPC, CPA, ROAS, revenue and website analytics. Each round also gives a score and specific coaching tied to baseline Google Ads guidelines.
 
-> AdLab is for teaching. Its results are modeled estimates built from approximate industry benchmarks, not real Google Ads data. AdLab is not affiliated with Google.
+> Digital Ad Lab is for teaching. Its results are modeled estimates built from approximate industry benchmarks, not real Google Ads data. Digital Ad Lab is not affiliated with Google.
 
 ## Run it
 
