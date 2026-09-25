@@ -1127,7 +1127,7 @@
       if (c.type === 'display') halo += c.impressions * 0.0003;
     });
     var localF = acc.serviceArea === 'local' ? 0.35 : 1;
-    var organicBase = 1200 * localF * ind.volume * (ctx.state.scan ? 1 : 0.7);
+    var organicBase = 1200 * localF * ind.volume;
     var rnd = U.rng(U.hash(ctx.state.seed + ':ga:' + ctx.roundNo));
     var rows = [];
     Object.keys(chan).forEach(function (k) {

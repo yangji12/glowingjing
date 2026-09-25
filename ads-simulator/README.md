@@ -10,15 +10,15 @@ Digital Ad Lab is a classroom simulator. Students build Search, Display, YouTube
 python ads-simulator/server.py          # then open http://localhost:8000
 ```
 
-This needs Python 3.8 or newer and nothing else. The server hosts the app and provides the **website scan** used by the quick start.
+This needs Python 3.8 or newer and nothing else; the server just hosts the app's files.
 
-For a classroom, run `python ads-simulator/server.py --host 0.0.0.0 --port 8000` on one machine and give students the address. You can also host the `ads-simulator/` folder on any static host, such as GitHub Pages. Everything works that way except live website scanning: students then pick a demo business or type their details in by hand.
+For a classroom, run `python ads-simulator/server.py --host 0.0.0.0 --port 8000` on one machine and give students the address. You can also host the `ads-simulator/` folder on any static host, such as GitHub Pages.
 
 Each student's work saves automatically in their own browser. **Settings → Export** downloads a `.json` file that students can submit and instructors can import.
 
 ## Student workflow
 
-1. **Business & website**: The student enters their website and clicks **Scan**. The scan reads the page title, description, headings, links and schema.org product data. Students can instead pick one of four demo businesses: a coffee retailer, a local law firm, a gym, or a B2B SaaS company. Next they set the industry, service area, goal, value per conversion, profit margin and conversion tracking. **Create a starter Search campaign** builds a Google-default-style draft from the scan. The draft runs, but not well, and that gap is the lesson.
+1. **Business & website**: Students enter their business name, website, industry, service area, goal, value per conversion, profit margin, conversion tracking and a description of what they sell. Or they pick one of four demo businesses: a coffee retailer, a local law firm, a gym, or a B2B SaaS company. **Create a starter Search campaign** builds a Google-default-style draft, taking keywords from the description (or the demo data). The draft runs, but not well, and that gap is the lesson.
 2. **Campaigns**: Students choose an objective and a campaign type, then fill in:
    - **Search**: ad groups and keywords using broad, `"phrase"` and `[exact]` notation, with Keyword Planner estimates. Also negatives, responsive search ads (15 headlines and 4 descriptions, with live ad strength and policy checks), sitelinks, callouts, structured snippets and a call asset.
    - **Display**: in-market, affinity, life-event, custom and remarketing audiences, plus topics, placements, demographics and optimized targeting. Responsive display ads preview in 7 formats.
@@ -63,8 +63,8 @@ ads-simulator/
   js/scoring.js   setup checklist, performance score, feedback
   js/previews.js  ad preview renderers
   js/app.js       UI
-  server.py       static server + /api/scan (stdlib; blocks private/internal addresses)
-  tests/          node --test ads-simulator/tests/*.test.js ; python -m unittest discover ads-simulator/tests
+  server.py       small static file server (stdlib)
+  tests/          node --test ads-simulator/tests/*.test.js
 ```
 
 To tune the market, edit the numbers in `js/data.js`. To add a guideline, add it to `GUIDELINES` and reference its ID from a check in `js/scoring.js`.

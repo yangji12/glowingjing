@@ -372,7 +372,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Quick start from a website scan
+  // Quick start (demo business data or the business description)
   // ---------------------------------------------------------------------------
 
   function titleCase(s) {
@@ -387,10 +387,37 @@
     return (sp > n * 0.5 ? cut.slice(0, sp) : cut).replace(/[\s,;:|–-]+$/, '');
   }
 
+  // Product/service phrases from the business description as starter keyword ideas:
+  // "Florist offering same-day flower delivery and wedding bouquets" -> same-day flower delivery, wedding bouquets.
+  var FILLER = new Set(('offering offer offers provide provides providing including include includes specializing specialize ' +
+    'based located serving serve serves selling sell sells handling family owned since all every plus also like such etc ' +
+    'into over than more most very just only you we our us their its your fast easy great fresh').split(' '));
+
+  function descriptionPhrases(text) {
+    var out = [];
+    String(text || '').toLowerCase().split(/[.,;:!?()\n]+/).forEach(function (chunk) {
+      var seg = [];
+      function flush() {
+        if (seg.length >= 2) {
+          var p = seg.slice(-3).join(' ');
+          if (out.indexOf(p) < 0) out.push(p);
+        }
+        seg = [];
+      }
+      U.words(chunk).forEach(function (w) {
+        if (U.STOPWORDS.has(w) || FILLER.has(w) || w.length < 3 || /\d/.test(w)) flush();
+        else seg.push(w);
+      });
+      flush();
+    });
+    return out.slice(0, 9);
+  }
+
   function scanKeywords(state) {
     var scan = state.scan || {};
     var ks = (scan.keywords || []).slice();
     (scan.topTerms || []).forEach(function (t) { if (ks.indexOf(t) < 0) ks.push(t); });
+    if (!ks.length) ks = descriptionPhrases(state.account.description);
     if (!ks.length) {
       var ind = D.INDUSTRIES[state.account.industry];
       ks = ind ? ind.vocab.split(' ').slice(0, 6) : [];
@@ -437,23 +464,6 @@
     return c;
   }
 
-  function importScanProducts(state) {
-    var scan = state.scan || {};
-    return (scan.products || []).map(function (sp) {
-      var p = newProduct();
-      p.title = sp.name || '';
-      p.price = Number(sp.price) || 0;
-      p.brand = sp.brand || '';
-      p.gtin = sp.gtin || '';
-      p.imageUrl = sp.image || '';
-      p.description = sp.description || '';
-      p.availability = /out/i.test(sp.availability || '') ? 'out_of_stock' : 'in_stock';
-      p.link = sp.url || '';
-      p.category = sp.category || '';
-      return p;
-    });
-  }
-
   function applyTemplate(state, tpl) {
     var s = newState();
     s.seed = state.seed;
@@ -492,7 +502,7 @@
     newVideoAd: newVideoAd, newProduct: newProduct, newTargeting: newTargeting, businessVocab: businessVocab,
     relevance: relevance, intentOf: intentOf, policyIssues: policyIssues, rsaStrength: rsaStrength,
     rdaStrength: rdaStrength, videoAdCheck: videoAdCheck, feedQuality: feedQuality, quickStartSearch: quickStartSearch,
-    importScanProducts: importScanProducts, applyTemplate: applyTemplate, adGroupKeywords: adGroupKeywords,
+    applyTemplate: applyTemplate, adGroupKeywords: adGroupKeywords,
     campaignNegatives: campaignNegatives, absoluteUrl: absoluteUrl, keywordTokenCoverage: keywordTokenCoverage,
     hasCTA: hasCTA, migrate: migrate, fit: fit, STRENGTH_LABELS: STRENGTH_LABELS
   };

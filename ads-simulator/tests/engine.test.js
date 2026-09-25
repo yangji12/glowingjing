@@ -157,3 +157,10 @@ test('policy checks catch common editorial violations', () => {
   assert.ok(M.policyIssues('HUGE SALE today', 'headline').length);
   assert.strictEqual(M.policyIssues('Free Shipping Over $35', 'headline').length, 0);
 });
+
+test('starter campaign without demo data takes keywords from the description', () => {
+  const s = M.newState();
+  Object.assign(s.account, { businessName: 'Green Leaf Florist', website: 'https://greenleaf.example', description: 'Local florist offering same-day flower delivery, wedding bouquets and sympathy flowers in Portland.' });
+  const kws = M.quickStartSearch(s).adGroups.flatMap((g) => M.adGroupKeywords(g).map((k) => k.text));
+  assert.ok(kws.includes('same-day flower delivery') && kws.includes('wedding bouquets'), kws.join(', '));
+});

@@ -7,7 +7,7 @@
   var KEY = 'adsim.state.v1';
 
   var S = load();
-  var UI = { route: 'overview', params: [], combo: 0, device: 'desktop', round: null, reportTab: 'campaigns', newCamp: null, sort: {}, scan: { status: '', busy: false }, csv: '', stFilter: 'all' };
+  var UI = { route: 'overview', params: [], combo: 0, device: 'desktop', round: null, reportTab: 'campaigns', newCamp: null, sort: {}, scan: { status: '' }, csv: '', stFilter: 'all' };
   var LIVE = {};
   var TABLES = {};
   var CHARTS = {};
@@ -357,7 +357,7 @@
     var h = header('Overview', S.account.businessName ? esc(S.account.businessName) + ' · ' + esc(industry().name) + ' · Goal: ' + esc(D.GOALS[S.account.goal].name) : 'Practice building Google Ads campaigns and see simulated results.');
     if (!r) {
       var steps = [
-        ['1', 'Set up your business', 'Enter your website to scan it (or pick a demo business), choose an industry, goal, and conversion value.', '#/setup', !needsBusiness()],
+        ['1', 'Set up your business', 'Enter your business details (or pick a demo business), choose an industry, goal, and conversion value.', '#/setup', !needsBusiness()],
         ['2', 'Build campaigns', 'Create Search, Display, YouTube or Shopping campaigns. Write ads, pick keywords/audiences, set budgets and bids.', '#/campaigns', S.campaigns.length > 0],
         ['3', 'Preview your ads', 'See how your ads look on search results, websites, YouTube and Shopping.', '#/previews', false],
         ['4', 'Run a 30-day round', 'The simulator runs the auctions against competitors and reports clicks, impressions, CPC, conversions and website traffic.', '#/simulate', false],
@@ -416,17 +416,14 @@
   function viewSetup() {
     var acc = S.account;
     var ind = industry();
-    var scan = S.scan;
+    var demo = S.scan && S.scan.source === 'template' ? S.scan : null;
     var tpl = D.TEMPLATES.map(function (t) { return btn(esc(t.label), 'applyTemplate', t.id, 'ghost'); }).join('');
-    var h = header('Business & website', 'Quick start: scan your website, or pick a demo business. Everything here drives the simulation.');
-    var scanCard = '<div class="card"><h3>1 · Quick start from your website</h3>' +
-      '<div class="row">' + input('account.website', { placeholder: 'https://www.yourbusiness.com', inputType: 'url', aria: 'Website URL', cls: 'grow' }) + btn(UI.scan.busy ? 'Scanning…' : '🔎 Scan website', 'scan', null, 'primary') + '</div>' +
-      (UI.scan.status ? '<p class="scan-status">' + UI.scan.status + '</p>' : '') +
-      '<p class="help">The scan reads your page title, description, headings, links and product data to suggest keywords, ads, sitelinks and a product feed. ' +
-      'Website scanning needs the included server (<code>python ads-simulator/server.py</code>); otherwise fill the fields in manually.</p>' +
-      '<div class="or">No website? Use a demo business:</div><div class="row wrap">' + tpl + '</div></div>';
+    var h = header('Business & website', 'Enter your own business, or start from a demo business. Everything here drives the simulation.');
+    var startCard = '<div class="card"><h3>1 · Quick start</h3><p>Use a demo business, or fill in your own business details below.</p>' +
+      '<div class="row wrap">' + tpl + '</div>' + (UI.scan.status ? '<p class="scan-status">' + UI.scan.status + '</p>' : '') + '</div>';
     var bizCard = '<div class="card"><h3>2 · Business details</h3><div class="grid2">' +
       field('Business name', input('account.businessName', { placeholder: 'e.g., Brew Haven Coffee', aria: 'Business name', max: 25 }), 'Shown in your ads (max 25 characters for Display).') +
+      field('Website', input('account.website', { placeholder: 'https://www.yourbusiness.com', inputType: 'url', aria: 'Website URL' }), 'Used for your ads\' final URLs. Use https://.') +
       field('Industry (sets market benchmarks)', select('account.industry', Object.keys(D.INDUSTRIES).map(function (k) { return [k, D.INDUSTRIES[k].name]; }), { aria: 'Industry' })) +
       field('Where do you serve customers?', select('account.serviceArea', [['local', 'Local area (store, clinic, service area)'], ['national', 'Nationally (ship / serve the whole country)'], ['international', 'Internationally']], { aria: 'Service area' })) +
       field('Main advertising goal', select('account.goal', Object.keys(D.GOALS).map(function (k) { return [k, D.GOALS[k].name]; }), { aria: 'Goal' })) +
@@ -435,25 +432,21 @@
       field('Brand color', '<input type="color" data-bind="account.brandColor" value="' + esc(acc.brandColor) + '" aria-label="Brand color">', 'Used in ad previews.') +
       field('Logo image URL (optional)', input('account.logoUrl', { placeholder: 'https://…/logo.png', aria: 'Logo URL' })) +
       '</div>' +
-      field('What do you sell? (description)', textarea('account.description', { rows: 3, placeholder: 'Describe your products/services, locations and selling points. The simulator uses these words to judge keyword relevance.', aria: 'Business description' })) +
+      field('What do you sell? (description)', textarea('account.description', { rows: 3, placeholder: 'Describe your products/services, locations and selling points. The simulator uses these words to judge keyword relevance and to build your starter campaign.', aria: 'Business description' })) +
       '<div class="tracking ' + (acc.conversionTracking ? 'on' : 'off') + '">' + checkbox('account.conversionTracking', '<b>Google tag & conversion tracking installed</b>', 'Measures purchases/leads, enables Smart Bidding and builds remarketing lists. ' + guideLink('ACC-1')) + '</div></div>';
-    var scanRes = '';
-    if (scan) {
-      var tick = function (ok) { return ok ? '<span class="chip good"><b>✓</b> Yes</span>' : '<span class="chip critical"><b>✕</b> No</span>'; };
-      scanRes = '<div class="card"><h3>3 · What we found' + (scan.source === 'template' ? ' (demo data)' : scan.source === 'manual' ? ' (from URL only)' : '') + '</h3>' +
-        (scan.title ? '<p><b>Title:</b> ' + esc(scan.title) + '</p>' : '') + (scan.description ? '<p><b>Description:</b> ' + esc(scan.description) + '</p>' : '') +
-        '<div class="row wrap">HTTPS ' + tick(scan.https) + ' &nbsp; Mobile-friendly viewport ' + tick(scan.hasViewport !== false) + (scan.loadMs ? ' &nbsp; Load time ' + scan.loadMs + ' ms' : '') + '</div>' +
-        ((scan.keywords || []).length || (scan.topTerms || []).length ? '<p><b>Keyword ideas:</b></p><div class="chips">' + U.uniq((scan.keywords || []).concat(scan.topTerms || [])).slice(0, 24).map(function (k) { return '<span class="chip neutral">' + esc(k) + '</span>'; }).join('') + '</div>' : '') +
-        ((scan.links || []).length ? '<p><b>Pages (sitelink ideas):</b> ' + scan.links.slice(0, 8).map(function (l) { return esc(l.text); }).join(' · ') + '</p>' : '') +
-        ((scan.products || []).length ? '<p><b>Products found:</b> ' + scan.products.length + ' ' + btn('Import to product feed', 'importProducts', null, 'small') + '</p>' : '') +
-        '<div class="row wrap">' + btn('✨ Create a starter Search campaign from this website', 'quickStart', null, 'primary') + '</div>' +
-        '<p class="help">The starter campaign uses Google-style defaults (broad match, network expansion on, few assets). It will run — but not well. Your job is to improve it using the feedback.</p></div>';
+    var starter = '';
+    if (!needsBusiness()) {
+      starter = '<div class="card"><h3>3 · Starter campaign</h3>' +
+        (demo ? '<p class="muted">Demo business data: ' + esc(demo.title || '') + '</p>' +
+          ((demo.keywords || []).length ? '<div class="chips">' + demo.keywords.slice(0, 16).map(function (k) { return '<span class="chip neutral">' + esc(k) + '</span>'; }).join('') + '</div>' : '') : '') +
+        '<div class="row wrap">' + btn('✨ Create a starter Search campaign', 'quickStart', null, 'primary') + '</div>' +
+        '<p class="help">Builds a draft from your ' + (demo ? 'demo business' : 'description and industry') + ' with Google-style defaults (broad match, network expansion on, few assets). It will run, but not well. Your job is to improve it using the feedback.</p></div>';
     }
     var bench = '<div class="card"><h3>Market benchmarks: ' + esc(ind.name) + '</h3><p class="muted">Approximate industry averages used by the simulator.</p><div class="table-wrap"><table class="data compact"><thead><tr><th></th><th class="num">CTR</th><th class="num">Avg. CPC</th><th class="num">Conv. rate</th><th class="num">Cost / conv.</th></tr></thead><tbody>' +
       [['Search', ind.search], ['Display', ind.display], ['Shopping', ind.shopping]].map(function (x) {
         return '<tr><td>' + x[0] + '</td><td class="num">' + fPct(x[1].ctr) + '</td><td class="num">' + fMoney(x[1].cpc) + '</td><td class="num">' + fPct(x[1].cvr) + '</td><td class="num">' + fMoney(x[1].cpc / x[1].cvr) + '</td></tr>';
       }).join('') + '<tr><td>YouTube</td><td colspan="4">CPV ≈ ' + fMoney(ind.video.cpv) + ', view rate ≈ ' + fPct(ind.video.viewRate, 0) + '</td></tr></tbody></table></div></div>';
-    return h + '<div class="grid-2-1"><div>' + scanCard + bizCard + scanRes + '</div><div>' + bench + setupSnapshot() + '</div></div>';
+    return h + '<div class="grid-2-1"><div>' + startCard + bizCard + starter + '</div><div>' + bench + setupSnapshot() + '</div></div>';
   }
 
   // ----- Campaigns list -----
@@ -463,7 +456,7 @@
     var body = '';
     if (UI.newCamp) body += newCampaignPanel();
     if (!S.campaigns.length && !UI.newCamp) {
-      body += '<div class="card empty-state"><h3>No campaigns yet</h3><p>Create your first campaign, or generate a starter Search campaign from your website.</p>' + btn('＋ New campaign', 'newCampaign', null, 'primary') + ' ' + (S.scan ? btn('✨ Starter campaign from website', 'quickStart') : '<a class="btn" href="#/setup">Set up business first</a>') + '</div>';
+      body += '<div class="card empty-state"><h3>No campaigns yet</h3><p>Create your first campaign, or generate a starter Search campaign from your business details.</p>' + btn('＋ New campaign', 'newCampaign', null, 'primary') + ' ' + (!needsBusiness() ? btn('✨ Starter Search campaign', 'quickStart') : '<a class="btn" href="#/setup">Set up business first</a>') + '</div>';
     }
     if (S.campaigns.length) {
       body += '<div class="card"><div class="table-wrap"><table class="data"><thead><tr><th>Campaign</th><th>Type</th><th>Status</th><th class="num">Budget / day</th><th>Bid strategy</th><th class="num">Ad groups</th><th>Setup checks</th><th></th></tr></thead><tbody>' +
@@ -735,7 +728,7 @@
   function assetsEditor(c, base) {
     var a = c.assets;
     var sl = a.sitelinks || [];
-    var h = '<div class="card"><div class="card-head"><h3>Sitelinks ' + guideLink('AST-1') + '</h3>' + (S.scan && (S.scan.links || []).length ? btn('Fill from website', 'fillSitelinks', c.id, 'small') : '') + '</div>' +
+    var h = '<div class="card"><div class="card-head"><h3>Sitelinks ' + guideLink('AST-1') + '</h3>' + (S.scan && (S.scan.links || []).length ? btn('Fill from demo pages', 'fillSitelinks', c.id, 'small') : '') + '</div>' +
       (sl.length ? sl.map(function (s, i) {
         var sb = base + '.assets.sitelinks.' + i;
         return '<div class="sitelink-row">' + field('Sitelink text', input(sb + '.text', { max: 25 })) + field('Description line 1', input(sb + '.d1', { max: 35 })) + field('Description line 2', input(sb + '.d2', { max: 35 })) + field('Final URL', input(sb + '.url', { inputType: 'url' })) + btn('✕', 'removeSitelink', [c.id, i], 'small ghost danger') + '</div>';
@@ -778,9 +771,9 @@
 
   // ----- Product feed -----
   function viewFeed() {
-    var h = header('Product feed', 'Your product data (like Google Merchant Center). Shopping ads are built entirely from it.', btn('＋ Add product', 'addProduct', null, 'primary') + (S.scan && (S.scan.products || []).length ? btn('Import from website', 'importProducts') : ''));
+    var h = header('Product feed', 'Your product data (like Google Merchant Center). Shopping ads are built entirely from it.', btn('＋ Add product', 'addProduct', null, 'primary'));
     h += '<div class="card info-card">Title formula: <b>Brand + Product type + Key attributes</b> (size, color, material, model). 70–150 characters; the first ~70 are visible. Include GTIN, a good image, accurate price and availability. ' + guideLink('SHP-1') + ' ' + guideLink('SHP-2') + '</div>';
-    if (!S.products.length) h += '<div class="card empty-state"><p>No products yet. Add products manually, import from your website scan, or paste CSV below.</p></div>';
+    if (!S.products.length) h += '<div class="card empty-state"><p>No products yet. Add products manually or paste CSV below.</p></div>';
     S.products.forEach(function (p, i) {
       var pb = 'products.' + i;
       h += '<div class="card product"><div class="card-head"><h3>Product ' + (i + 1) + '</h3>' + btn('Remove', 'removeProduct', p.id, 'small ghost danger') + '</div><div class="ad-editor"><div>' +
@@ -1171,33 +1164,6 @@
   }
 
   var ACTIONS = {
-    scan: function () {
-      var url = String(S.account.website || '').trim();
-      if (!url) { toast('Enter your website URL first.'); return; }
-      if (!/^https?:\/\//i.test(url)) { url = 'https://' + url; S.account.website = url; }
-      UI.scan = { busy: true, status: 'Scanning ' + esc(url) + '…' };
-      render(true);
-      fetch('api/scan?url=' + encodeURIComponent(url)).then(function (res) {
-        if (!res.ok) return res.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || ('HTTP ' + res.status)); });
-        return res.json();
-      }).then(function (data) {
-        S.scan = Object.assign({ source: 'scan' }, data);
-        if (data.siteName || data.title) S.account.businessName = S.account.businessName || M.fit((data.siteName || data.title.split(/[|–\-:]/)[0]).trim(), 25);
-        if (!S.account.description && data.description) S.account.description = data.description;
-        if (data.themeColor && /^#[0-9a-f]{6}$/i.test(data.themeColor)) S.account.brandColor = data.themeColor;
-        if (data.logo && !S.account.logoUrl) S.account.logoUrl = data.logo;
-        if (data.finalUrl) S.account.website = data.finalUrl.replace(/\/$/, '');
-        UI.scan = { busy: false, status: '✓ Scan complete: found ' + (data.keywords || []).length + ' keyword ideas, ' + (data.links || []).length + ' pages and ' + (data.products || []).length + ' products.' };
-        save(); render(true);
-      }).catch(function (err) {
-        var d = U.domainOf(url);
-        var label = d.split('.')[0].replace(/[-_]+/g, ' ');
-        S.scan = { source: 'manual', title: '', description: S.account.description || '', keywords: [], topTerms: [], links: [], products: [], https: /^https:/i.test(url), hasViewport: true };
-        if (!S.account.businessName) S.account.businessName = M.fit(label.replace(/\b\w/g, function (c) { return c.toUpperCase(); }), 25);
-        UI.scan = { busy: false, status: '⚠ Could not scan the site automatically (' + esc(err.message) + '). Start the included server (<code>python ads-simulator/server.py</code>) for live scanning, or fill in the business details and description below.' };
-        save(); render(true);
-      });
-    },
     applyTemplate: function (el, id) {
       var t = D.TEMPLATES.find(function (x) { return x.id === id; });
       if (!t) return;
@@ -1213,12 +1179,6 @@
       save();
       toast('Starter Search campaign created. Now improve it!');
       location.hash = '#/campaign/' + c.id + '/settings';
-    },
-    importProducts: function () {
-      var ps = M.importScanProducts(S);
-      if (!ps.length) { toast('No products found in the scan.'); return; }
-      S.products = S.products.concat(ps);
-      save(); toast(ps.length + ' product(s) imported.'); location.hash = '#/feed';
     },
     newCampaign: function () {
       if (!ensureBusiness()) return;
