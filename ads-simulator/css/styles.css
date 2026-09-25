@@ -504,3 +504,4 @@ figcaption { font-size: 12px; font-weight: 600; color: var(--muted); margin-bott
 .textbox[hidden] { display: none; }
 .textbox-inner { background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 18px; width: min(720px, 100%); display: grid; gap: 10px; }
 .btn.armed { background: var(--chip-critical); color: var(--critical-ink); border-color: var(--critical); }
+.row.center { justify-content: center; }

@@ -263,10 +263,30 @@
     box.querySelector('textarea').select();
   }
 
+  // When published as a claude.ai page, files are saved through the viewer's download prompt.
+  var downloadsReady = window.claude && typeof window.claude.use === 'function' ? window.claude.use('downloads').catch(function () { return null; }) : Promise.resolve(null);
+
+  function saveFramed(name, data, fallbackText) {
+    return downloadsReady.then(function (dl) {
+      if (!dl) {
+        if (fallbackText != null) showText(name, fallbackText);
+        else toast('Downloads are not available in this view.');
+        return;
+      }
+      return dl.save({ filename: name, data: data }).then(function () { toast('Saved ' + name); }, function (err) {
+        var code = err && err.code;
+        if (code === 'declined') return;
+        if (code === 'rate_limited') { toast('A save prompt is already open.'); return; }
+        if (fallbackText != null) showText(name, fallbackText);
+        else toast('Could not save the file here (' + (code || 'unavailable') + ').');
+      });
+    });
+  }
+
   function download(name, text, type) {
     if (FRAMED) {
-      // downloads are blocked inside embedded pages: offer the text to copy instead
-      showText(name, text);
+      // embedded pages cannot start downloads themselves; fall back to copyable text
+      saveFramed(name, text, text);
       return;
     }
     var blob = new Blob([text], { type: type || 'text/plain' });
@@ -370,7 +390,7 @@
     var sc = r.score;
     var scoreCard = '<div class="card score-card"><div class="score-rings">' + ring(sc.overall, 'Overall · ' + sc.grade, 132) + ring(sc.setup, 'Setup', 104) + ring(sc.performance, 'Performance', 104) + '</div>' +
       '<p class="muted">Round ' + r.round + ' · ' + esc(new Date(r.createdAt).toLocaleString()) + '</p>' + (r.events.length ? '<ul class="events">' + r.events.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
-      '<a class="btn primary" href="#/feedback">See full feedback →</a></div>';
+      '<div class="row wrap center"><a class="btn primary" href="#/feedback">See full feedback →</a>' + btn('⬇ Download PDF', 'downloadPdf') + '</div></div>';
     var daily = r.daily;
     var charts = '<div class="card"><div class="grid2">' +
       lineChart('ov-clicks', daily.map(function (d) { return { label: 'Day ' + d.day, y: d.clicks }; }), { title: 'Clicks per day', name: 'Clicks', color: '--series-1' }) +
@@ -998,7 +1018,7 @@
     if (!r) return header('Score & feedback') + '<div class="card empty-state"><p>Run a round to get your score and feedback. Meanwhile, here is your current setup checklist.</p><a class="btn primary" href="#/simulate">Run simulation</a></div>' + setupChecklist(SC.evaluateSetup(S).checks, 'Current setup checklist');
     var sc = r.score;
     var acc = r.accountSnapshot || S.account;
-    var h = header('Score & feedback', 'Round ' + r.round + ' results and coaching', roundSelect() + (FRAMED ? '' : '<button class="btn ghost" data-action="print">🖨 Print report</button>'));
+    var h = header('Score & feedback', 'Round ' + r.round + ' results and coaching', roundSelect() + btn('⬇ Download PDF report', 'downloadPdf', null, 'primary') + (FRAMED ? '' : '<button class="btn ghost" data-action="print">🖨 Print</button>'));
     var t = r.totals;
     h += '<div class="card score-hero"><div class="score-rings">' + ring(sc.overall, 'Overall · grade ' + sc.grade, 140) + ring(sc.setup, 'Setup (45%)', 110) + ring(sc.performance, 'Performance (55%)', 110) + '</div>' +
       '<div class="money"><div><span>Revenue (est.)</span><b>' + fMoney0(t.value) + '</b></div><div><span>Ad cost</span><b>' + fMoney0(t.cost) + '</b></div><div><span>Profit after ads (est.)</span><b class="' + (sc.profit >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(sc.profit) + '</b></div><div><span>ROAS</span><b>' + fX(t.roas) + '</b><small>break-even ' + fX(sc.breakEvenRoas) + '</small></div><div><span>Conversions</span><b>' + fInt(t.conversions) + '</b>' + (r.tracked ? '' : '<small class="warn-text">estimated — not tracked</small>') + '</div></div>' +
@@ -1054,7 +1074,7 @@
     return header('Settings') + '<div class="grid2"><div class="card"><h3>Student</h3>' + field('Your name (appears on exports and printed reports)', input('student', { placeholder: 'Name' })) +
       field('Simulation seed', input('seed', { type: 'number' }), 'Instructors can give every student the same seed so market conditions match.') + '</div>' +
       '<div class="card"><h3>Save & share</h3><p>Your work is saved automatically in this browser. Export a file to submit it or move to another computer.</p><div class="row wrap">' +
-      btn('⬇ Export project (.json)', 'exportJson', null, 'primary') + '<label class="btn">⬆ Import project<input type="file" accept="application/json,.json" data-action-change="importJson" hidden></label>' + (FRAMED ? '' : btn('🖨 Print latest report', 'print')) + '</div></div>' +
+      btn('⬇ Export project (.json)', 'exportJson', null, 'primary') + (S.rounds.length ? btn('⬇ Results overview (PDF)', 'downloadPdf') : '') + '<label class="btn">⬆ Import project<input type="file" accept="application/json,.json" data-action-change="importJson" hidden></label>' + (FRAMED ? '' : btn('🖨 Print latest report', 'print')) + '</div></div>' +
       '<div class="card"><h3>Reset</h3><p>Clear simulation rounds but keep your campaigns, or start over completely.</p><div class="row wrap">' + btn('Clear rounds', 'resetRounds', null, 'ghost danger') + btn('Start over', 'resetAll', null, 'danger') + '</div></div>' +
       '<div class="card"><h3>About</h3><p>Digital Ad Lab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC; this project is not affiliated with Google.</p></div></div>';
   }
@@ -1330,6 +1350,15 @@
       if (!g) { toast('That ad group no longer exists.'); return; }
       g.keywordsText = (g.keywordsText ? g.keywordsText.replace(/\s+$/, '') + '\n' : '') + '"' + args[2] + '"';
       save(); render(true); toast('Added "' + args[2] + '" as a phrase-match keyword to "' + g.name + '".');
+    },
+    downloadPdf: function () {
+      var r = UI.route === 'feedback' ? currentRound() : S.rounds[S.rounds.length - 1];
+      if (!r) { toast('Run a simulation round first.'); return; }
+      if (!A.reportPdf || !A.reportPdf.available()) { toast('The PDF tool did not load. Check your internet connection and reload the page.'); return; }
+      var doc, name = A.reportPdf.filename(S, r);
+      try { doc = A.reportPdf.build(S, r, prevRoundOf(r)); } catch (e) { console.error(e); toast('Could not build the PDF: ' + e.message); return; }
+      if (FRAMED) saveFramed(name, doc.output('blob'));
+      else doc.save(name);
     },
     exportCsv: function (el, id) { download(id + '-round' + ((currentRound() || {}).round || 0) + '.csv', csvOf(id), 'text/csv'); },
     exportJson: function () {

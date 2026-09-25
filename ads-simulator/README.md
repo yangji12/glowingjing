@@ -29,6 +29,7 @@ Each student's work saves automatically in their own browser. **Settings → Exp
 4. **Run simulation**: Runs one round, which simulates 30 days of auctions.
 5. **Reports**: Tabs for campaigns, ad groups, keywords (Quality Score and its three components), search terms (with one-click **Negative** and **Keyword** buttons), audiences and placements, products, devices, GA4-style website analytics, and daily charts. Every table can be exported to CSV.
 6. **Score & feedback**: Shows the overall grade, the setup score by area, the performance breakdown, estimated revenue and profit, and a prioritized list of recommendations. Each recommendation links to the guideline behind it.
+7. **PDF results overview**: **Download PDF** (on Overview, Score & feedback and Settings) saves a 3-page report of the round: scores, key results with change vs. the previous round, a daily clicks chart, campaign results, the score breakdown, top recommendations, website analytics and round history. It uses jsPDF from cdnjs, so it needs an internet connection.
 
 ## How the simulation works (short version)
 
