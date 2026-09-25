@@ -242,7 +242,33 @@
     return lines.join('\n');
   }
 
+  var FRAMED = (function () { try { return window.self !== window.top; } catch (e) { return true; } })();
+
+  // Two-click confirmation inside the page (browser confirm() dialogs are not available everywhere).
+  function armed(el, label) {
+    if (el.dataset.armed) return true;
+    el.dataset.armed = '1';
+    var orig = el.innerHTML;
+    el.innerHTML = label || 'Click again to confirm';
+    el.classList.add('armed');
+    setTimeout(function () { if (el.isConnected) { delete el.dataset.armed; el.innerHTML = orig; el.classList.remove('armed'); } }, 4000);
+    return false;
+  }
+
+  function showText(title, text) {
+    var box = document.getElementById('textbox');
+    box.querySelector('h3').textContent = title;
+    box.querySelector('textarea').value = text;
+    box.hidden = false;
+    box.querySelector('textarea').select();
+  }
+
   function download(name, text, type) {
+    if (FRAMED) {
+      // downloads are blocked inside embedded pages: offer the text to copy instead
+      showText(name, text);
+      return;
+    }
     var blob = new Blob([text], { type: type || 'text/plain' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -972,7 +998,7 @@
     if (!r) return header('Score & feedback') + '<div class="card empty-state"><p>Run a round to get your score and feedback. Meanwhile, here is your current setup checklist.</p><a class="btn primary" href="#/simulate">Run simulation</a></div>' + setupChecklist(SC.evaluateSetup(S).checks, 'Current setup checklist');
     var sc = r.score;
     var acc = r.accountSnapshot || S.account;
-    var h = header('Score & feedback', 'Round ' + r.round + ' results and coaching', roundSelect() + '<button class="btn ghost" data-action="print">🖨 Print report</button>');
+    var h = header('Score & feedback', 'Round ' + r.round + ' results and coaching', roundSelect() + (FRAMED ? '' : '<button class="btn ghost" data-action="print">🖨 Print report</button>'));
     var t = r.totals;
     h += '<div class="card score-hero"><div class="score-rings">' + ring(sc.overall, 'Overall · grade ' + sc.grade, 140) + ring(sc.setup, 'Setup (45%)', 110) + ring(sc.performance, 'Performance (55%)', 110) + '</div>' +
       '<div class="money"><div><span>Revenue (est.)</span><b>' + fMoney0(t.value) + '</b></div><div><span>Ad cost</span><b>' + fMoney0(t.cost) + '</b></div><div><span>Profit after ads (est.)</span><b class="' + (sc.profit >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(sc.profit) + '</b></div><div><span>ROAS</span><b>' + fX(t.roas) + '</b><small>break-even ' + fX(sc.breakEvenRoas) + '</small></div><div><span>Conversions</span><b>' + fInt(t.conversions) + '</b>' + (r.tracked ? '' : '<small class="warn-text">estimated — not tracked</small>') + '</div></div>' +
@@ -1028,7 +1054,7 @@
     return header('Settings') + '<div class="grid2"><div class="card"><h3>Student</h3>' + field('Your name (appears on exports and printed reports)', input('student', { placeholder: 'Name' })) +
       field('Simulation seed', input('seed', { type: 'number' }), 'Instructors can give every student the same seed so market conditions match.') + '</div>' +
       '<div class="card"><h3>Save & share</h3><p>Your work is saved automatically in this browser. Export a file to submit it or move to another computer.</p><div class="row wrap">' +
-      btn('⬇ Export project (.json)', 'exportJson', null, 'primary') + '<label class="btn">⬆ Import project<input type="file" accept="application/json,.json" data-action-change="importJson" hidden></label>' + btn('🖨 Print latest report', 'print') + '</div></div>' +
+      btn('⬇ Export project (.json)', 'exportJson', null, 'primary') + '<label class="btn">⬆ Import project<input type="file" accept="application/json,.json" data-action-change="importJson" hidden></label>' + (FRAMED ? '' : btn('🖨 Print latest report', 'print')) + '</div></div>' +
       '<div class="card"><h3>Reset</h3><p>Clear simulation rounds but keep your campaigns, or start over completely.</p><div class="row wrap">' + btn('Clear rounds', 'resetRounds', null, 'ghost danger') + btn('Start over', 'resetAll', null, 'danger') + '</div></div>' +
       '<div class="card"><h3>About</h3><p>AdLab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC; this project is not affiliated with Google.</p></div></div>';
   }
@@ -1155,7 +1181,7 @@
     applyTemplate: function (el, id) {
       var t = D.TEMPLATES.find(function (x) { return x.id === id; });
       if (!t) return;
-      if ((S.campaigns.length || S.rounds.length) && !confirm('Load "' + t.label + '"? This replaces your current business, campaigns and rounds.')) return;
+      if ((S.campaigns.length || S.rounds.length) && !armed(el, 'Replace my work with this demo?')) return;
       S = M.applyTemplate(S, t);
       UI.scan = { status: '✓ Loaded demo business "' + esc(t.account.businessName) + '".' };
       save(); render();
@@ -1201,7 +1227,7 @@
     },
     deleteCampaign: function (el, id) {
       var c = campById(id);
-      if (!confirm('Delete campaign "' + c.name + '"?')) return;
+      if (!armed(el, 'Confirm delete')) return;
       S.campaigns.splice(campIndex(id), 1);
       save(); render(true);
     },
@@ -1213,7 +1239,7 @@
     },
     removeAdGroup: function (el, args) {
       var c = campById(args[0]);
-      if (!confirm('Remove this ad group?')) return;
+      if (!armed(el, 'Confirm remove')) return;
       c.adGroups = c.adGroups.filter(function (g) { return g.id !== args[1]; });
       save(); render(true);
     },
@@ -1310,8 +1336,8 @@
       var name = (S.student || 'student').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
       download('adlab-' + name + '-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(S, null, 1), 'application/json');
     },
-    resetRounds: function () { if (confirm('Delete all simulation rounds? Campaigns are kept.')) { S.rounds = []; UI.round = null; save(); render(); } },
-    resetAll: function () { if (confirm('Start over? This deletes everything in this browser.')) { S = M.newState(); UI.round = null; save(); location.hash = '#/overview'; render(); } },
+    resetRounds: function (el) { if (armed(el, 'Click again to delete all rounds')) { S.rounds = []; UI.round = null; save(); render(); } },
+    resetAll: function (el) { if (armed(el, 'Click again to erase everything')) { S = M.newState(); UI.round = null; save(); location.hash = '#/overview'; render(); } },
     print: function () {
       if (UI.route !== 'feedback') { location.hash = '#/feedback'; }
       setTimeout(function () { window.print(); }, 150);
@@ -1408,6 +1434,18 @@
     if (UI.route !== 'campaigns') UI.newCamp = null;
     render();
     window.scrollTo(0, 0);
+  });
+
+  document.getElementById('textbox').addEventListener('click', function (e) {
+    var box = document.getElementById('textbox');
+    if (e.target.dataset.close != null || e.target === box) box.hidden = true;
+    if (e.target.dataset.copy != null) {
+      var ta = box.querySelector('textarea');
+      ta.select();
+      var ok = function () { toast('Copied to clipboard.'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(ok, function () { toast('Press Ctrl+C / Cmd+C to copy the selected text.'); });
+      else toast('Press Ctrl+C / Cmd+C to copy the selected text.');
+    }
   });
 
   document.getElementById('menu-btn').addEventListener('click', function () { document.body.classList.toggle('nav-open'); });

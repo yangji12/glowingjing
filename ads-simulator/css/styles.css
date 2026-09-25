@@ -498,3 +498,9 @@ figcaption { font-size: 12px; font-weight: 600; color: var(--muted); margin-bott
   details { display: block; }
   details > * { display: block; }
 }
+
+/* In-page text export & two-click confirm */
+.textbox { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: grid; place-items: center; z-index: 60; padding: 16px; }
+.textbox[hidden] { display: none; }
+.textbox-inner { background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 18px; width: min(720px, 100%); display: grid; gap: 10px; }
+.btn.armed { background: var(--chip-critical); color: var(--critical-ink); border-color: var(--critical); }
