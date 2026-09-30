@@ -23,7 +23,12 @@ function savePref(key, value) {
 
 // ------------------------------------------------------------------ utils
 
+// The single-file version (Family-Budget.html) defines window.LocalBackend and runs
+// everything in the browser; otherwise requests go to server.py.
+const LOCAL = window.LocalBackend || null;
+
 async function api(path, opts = {}) {
+  if (LOCAL) return LOCAL.request(path, opts);
   const init = { ...opts };
   if (opts.json !== undefined) {
     init.body = JSON.stringify(opts.json);
@@ -137,6 +142,7 @@ async function loadMeta() {
 }
 
 async function boot() {
+  if (LOCAL) $(".sidebar-foot").textContent = "Your data is saved privately in this browser on this computer.";
   await loadMeta();
   const saved = loadPref("month", null);
   state.month = saved || (state.meta.months.includes(state.meta.current_month) || !state.meta.months.length
@@ -279,7 +285,8 @@ async function renderBudget(view) {
 
   if (!state.meta.transaction_count) {
     html += `<div class="banner"><span class="big">👋</span><div style="flex:1"><strong>Welcome!</strong> Upload a bank or credit-card statement (CSV, Excel or PDF) and it will be categorized automatically.
-      Or load demo data to look around first.</div>
+      Or load demo data to look around first.
+      <div class="muted" style="font-size:13px;margin-top:4px">To set your monthly plan, click <em>Show … unbudgeted</em> in a section and type an amount next to each category.</div></div>
       <button class="btn primary" data-action="upload">Upload statement</button><button class="btn" data-action="demo">Load demo data</button></div>`;
   }
   if (b.uncategorized.count) {
@@ -689,20 +696,26 @@ function openUpload() {
 
 // ------------------------------------------------------------------ export
 
+function download(kind, month) {
+  if (!LOCAL) {
+    location.href = kind === "csv-all" ? "/api/export/csv" : `/api/export/${kind}?month=${month}`;
+    return;
+  }
+  try { LOCAL.exportFile(kind, month); } catch (e) { toast(e.message); }
+}
+
 async function doExport(kind) {
   $("#export-menu").classList.add("hidden");
   const m = state.month;
-  if (kind === "pdf") return (location.href = `/api/export/pdf?month=${m}`);
-  if (kind === "xlsx") return (location.href = `/api/export/xlsx?month=${m}`);
-  if (kind === "csv") return (location.href = `/api/export/csv?month=${m}`);
+  if (["pdf", "xlsx", "csv"].includes(kind)) return download(kind, m);
   if (kind === "gsheets") {
     if (!state.meta.google_sheets) {
       modal("Export to Google Sheets", `
-        <p>Two ways to get your budget into Google Sheets:</p>
-        <p><strong>1. Quick (no setup):</strong> download the spreadsheet, then in Google Sheets choose <em>File → Import → Upload</em>. You'll get Summary, Transactions and 12-Month Trend tabs.</p>
+        ${LOCAL ? "" : "<p>Two ways to get your budget into Google Sheets:</p>"}
+        <p>${LOCAL ? "" : "<strong>1. Quick (no setup):</strong> "} download the spreadsheet, then in Google Sheets choose <em>File → Import → Upload</em>. You'll get Summary, Transactions and 12-Month Trend tabs.</p>
         <button class="btn primary" id="dl-xlsx">⬇ Download spreadsheet</button>
-        <p style="margin-top:18px"><strong>2. One-click export:</strong> connect a Google service account once (see <em>README → Google Sheets</em>), and this button will create the Google Sheet for you and share it with your email.</p>`);
-      $("#dl-xlsx").onclick = () => { location.href = `/api/export/xlsx?month=${m}`; closeModal(); };
+        ${LOCAL ? "" : `<p style="margin-top:18px"><strong>2. One-click export:</strong> connect a Google service account once (see <em>README → Google Sheets</em>), and this button will create the Google Sheet for you and share it with your email.</p>`}`);
+      $("#dl-xlsx").onclick = () => { download("xlsx", m); closeModal(); };
       return;
     }
     toast("Creating Google Sheet…", 10000);
@@ -729,24 +742,27 @@ async function renderSettings(view) {
 
         <div class="panel"><h3>✨ AI features</h3>
           <div class="desc">Powers statement reading, smart categorization and the budget assistant. Uses your own Anthropic API key
-            (<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">get one here</a>). The key is stored only in your local database.</div>
+            (<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">get one here</a>). The key is stored only ${LOCAL ? "in this browser on this computer" : "in your local database"}.</div>
           <div style="margin-bottom:10px">Status: ${state.meta.ai_enabled ? `<span class="pill good">On</span> ${s.api_key_from_env ? "(key from ANTHROPIC_API_KEY)" : `key ${esc(s.api_key_hint || "")}`}` : `<span class="pill zero">Off</span>`}</div>
           <div class="field"><label>Anthropic API key</label><input class="input" id="s-key" type="password" placeholder="sk-ant-…" autocomplete="off"></div>
           <button class="btn primary" id="s-save-key">Save key</button> ${s.api_key_saved ? `<button class="btn danger" id="s-clear-key">Remove key</button>` : ""}</div>
 
-        <div class="panel"><h3>🟩 Google Sheets</h3>
+        ${LOCAL ? "" : `<div class="panel"><h3>🟩 Google Sheets</h3>
           <div class="desc">${s.google_sheets ? "Connected — Export → Send to Google Sheets creates a new sheet." : "Not connected. You can always use Export → Excel / Google Sheets file and import it. For one-click export, follow README → Google Sheets."}</div>
           <div class="field"><label>Share new sheets with (your Google email)</label><input class="input" id="s-gemail" type="email" value="${esc(s.google_share_email)}" placeholder="you@gmail.com"></div>
-          <button class="btn" id="s-save-gemail">Save</button></div>
+          <button class="btn" id="s-save-gemail">Save</button></div>`}
 
         <div class="panel"><h3>Statements uploaded</h3><div class="desc">Removing an upload deletes the transactions it added.</div>
           ${uploads.length ? uploads.map((u) => `<div class="cat-row"><div style="flex:1;min-width:0"><div class="txn-desc" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.filename)}</div>
             <div class="txn-sub">${esc(u.account || "")} · ${u.added} added${u.first_date ? ` · ${fmtDate(u.first_date)} – ${fmtDate(u.last_date)}` : ""} · ${esc(u.uploaded_at.slice(0, 10))}</div></div>
             <button class="btn small danger" data-del-upload="${u.id}">Remove</button></div>`).join("") : `<div class="muted">No uploads yet.</div>`}</div>
 
-        <div class="panel"><h3>Your data</h3><div class="desc">Everything is saved in <code>family-budget/data/budget.db</code> on this computer. Back up that file to keep your history safe.</div>
+        <div class="panel"><h3>Your data</h3><div class="desc">${LOCAL
+            ? "Everything is saved in this web browser on this computer (not online). Download a backup now and then — clearing your browser's data would erase it. Use Restore to move your budget to another computer or browser."
+            : "Everything is saved in <code>family-budget/data/budget.db</code> on this computer. Back up that file to keep your history safe."}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <a class="btn" href="/api/export/csv">⬇ All transactions (CSV)</a>
+            ${LOCAL ? `<button class="btn" id="s-backup">💾 Download backup</button><button class="btn" id="s-restore">📂 Restore backup</button><input type="file" id="s-restore-file" accept=".json" hidden>` : ""}
+            <button class="btn" id="s-csv-all">⬇ All transactions (CSV)</button>
             <button class="btn" data-action="demo">Load demo data</button>
             <button class="btn danger" id="s-reset">Delete all data</button></div></div>
       </div>
@@ -771,7 +787,18 @@ async function renderSettings(view) {
   $("#s-save-family").onclick = () => saveSettings({ family_name: $("#s-family").value }, "Saved");
   $("#s-save-key").onclick = () => { const k = $("#s-key").value.trim(); if (!k) return toast("Paste your key first"); saveSettings({ anthropic_api_key: k }, "API key saved — AI features are on"); renderChatEmpty(); };
   if ($("#s-clear-key")) $("#s-clear-key").onclick = () => saveSettings({ anthropic_api_key: "" }, "API key removed");
-  $("#s-save-gemail").onclick = () => saveSettings({ google_share_email: $("#s-gemail").value }, "Saved");
+  $("#s-csv-all").onclick = () => download("csv-all");
+  if (LOCAL) {
+    $("#s-backup").onclick = () => download("backup");
+    $("#s-restore").onclick = () => $("#s-restore-file").click();
+    $("#s-restore-file").onchange = async (e) => {
+      const f = e.target.files[0];
+      if (!f || !confirm("Replace everything in this app with the backup? This can't be undone.")) return;
+      try { const r = await LOCAL.restoreBackup(f); toast(`Restored ${r.transactions} transactions`); refresh(); loadChat(); }
+      catch (err) { toast(err.message); }
+    };
+  }
+  if ($("#s-save-gemail")) $("#s-save-gemail").onclick = () => saveSettings({ google_share_email: $("#s-gemail").value }, "Saved");
   $("#s-reset").onclick = async () => {
     if (!confirm("Delete ALL transactions, budgets, uploads and chat history? Categories and settings are kept. This can't be undone.")) return;
     await api("/api/all-data", { method: "DELETE" }); toast("All data deleted"); refresh();
@@ -865,16 +892,23 @@ async function ask(question) {
   $("#ai-send").disabled = true;
   let text = "";
   try {
-    const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: state.month, message: question }) });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += dec.decode(value, { stream: true });
+    const onText = (piece) => {
+      text += piece;
       live.innerHTML = renderMarkdown(text);
       box.scrollTop = box.scrollHeight;
+    };
+    if (LOCAL) {
+      await LOCAL.chat(state.month, question, onText);
+    } else {
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: state.month, message: question }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        onText(dec.decode(value, { stream: true }));
+      }
     }
     if (!text) live.innerHTML = `<p class="muted">No answer came back. Try again?</p>`;
   } catch (e) {

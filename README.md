@@ -1,6 +1,6 @@
 # ResearchMind — AI Research Design Partner
 
-> This repo also contains **[Family Budget](family-budget/README.md)**, a self-hosted family budgeting app with AI statement categorization (see `family-budget/`).
+> This repo also contains **[Family Budget](family-budget/README.md)**, a family budgeting app with AI statement categorization. The easiest way to use it is to double-click [`family-budget/Family-Budget.html`](family-budget/Family-Budget.html).
 
 ## Quickest way to get started on Mac
 

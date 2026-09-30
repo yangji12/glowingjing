@@ -8,7 +8,22 @@ built-in AI budget assistant, and PDF / Excel / Google Sheets exports.
 
 All data stays on your computer in `data/budget.db` (SQLite).
 
-## Quick start
+## Easiest: just double-click `Family-Budget.html`
+
+`Family-Budget.html` is the whole app in one file. Download it, double-click it, and it
+opens in your web browser (Chrome, Safari, Edge or Firefox). There's nothing to install.
+
+- Your budget is saved **in that browser on that computer**. Use the same browser each time.
+- Use **Settings → Download backup** now and then. Clearing your browser history or data
+  would erase the budget, and a backup file lets you restore it or move to another computer.
+- To turn on AI (statement reading, smart categories, the assistant), paste an Anthropic
+  API key in **Settings**. The key is saved only in your browser and is sent only to Anthropic.
+- One-click Google Sheets export isn't available in this version. Use **Export → Excel / Google Sheets file**
+  and import it into Google Sheets.
+
+To rebuild the file after changing the code: `cd standalone && npm install && npm run build`.
+
+## Or run it as a small server
 
 Requires Python 3.10+.
 
@@ -107,4 +122,6 @@ After that, **Export → Send to Google Sheets** creates a new spreadsheet each 
 | `db.py` | SQLite schema and helpers |
 | `demo.py` | Demo data, plus `python demo.py out.csv` to write a sample statement |
 | `static/` | The web app (plain HTML/CSS/JS; Chart.js is bundled for offline use) |
+| `Family-Budget.html` | Single-file version: the same UI with everything running in the browser (built, don't edit) |
+| `standalone/` | In-browser backend (`backend.js`) and the build script that produces `Family-Budget.html` |
 | `sample_data/sample_statement.csv` | A sample statement to try the upload flow |
