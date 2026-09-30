@@ -1,5 +1,7 @@
 # ResearchMind — AI Research Design Partner
 
+> This repo also contains **[Family Budget](family-budget/README.md)**, a self-hosted family budgeting app with AI statement categorization (see `family-budget/`).
+
 ## Quickest way to get started on Mac
 
 1. Press **Command + Space**, type **Terminal**, press **Enter**

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Family Budget</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏡</text></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/vendor/chart.umd.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><span class="brand-mark">🏡</span><span id="brand-name">Family Budget</span></div>
+    <button class="nav-btn active" data-view="budget">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>Budget</button>
+    <button class="nav-btn" data-view="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Dashboard</button>
+    <button class="nav-btn" data-view="transactions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Transactions</button>
+    <button class="nav-btn" data-view="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+    <div class="sidebar-foot">Your data is stored on this computer in <code>data/budget.db</code>.</div>
+  </nav>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="month-switch">
+        <button class="icon-btn" id="prev-month" aria-label="Previous month">‹</button>
+        <h1 id="month-label">—</h1>
+        <button class="icon-btn" id="next-month" aria-label="Next month">›</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn primary" id="upload-btn">⬆ Upload statement</button>
+      <div class="menu-wrap">
+        <button class="btn" id="export-btn">⬇ Export</button>
+        <div class="menu hidden" id="export-menu">
+          <button data-export="pdf">📄 <span>PDF summary<small>Budget, charts & all transactions</small></span></button>
+          <button data-export="xlsx">📊 <span>Excel / Google Sheets file<small>Open in Sheets via File → Import</small></span></button>
+          <button data-export="gsheets">🟩 <span>Send to Google Sheets<small id="gsheets-hint">Creates a new Google Sheet</small></span></button>
+          <button data-export="csv">🧾 <span>Transactions CSV<small>This month's transactions</small></span></button>
+        </div>
+      </div>
+      <button class="btn" id="ai-toggle">✨ Assistant</button>
+    </header>
+    <div class="content" id="view"></div>
+  </main>
+
+  <aside class="ai-panel" id="ai-panel">
+    <div class="ai-head">
+      <span class="sparkle">✨</span>
+      <h3>Budget Assistant</h3>
+      <button class="icon-btn" id="ai-clear" title="Clear this month's conversation">↺</button>
+      <button class="icon-btn" id="ai-close" title="Close">✕</button>
+    </div>
+    <div class="ai-msgs" id="ai-msgs"></div>
+    <form class="ai-input" id="ai-form">
+      <textarea id="ai-text" rows="1" placeholder="Ask about your spending…"></textarea>
+      <button class="btn primary" id="ai-send" type="submit">Send</button>
+    </form>
+  </aside>
+</div>
+<div id="modal-root"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+anthropic>=1.9.0
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+pdfplumber>=0.11
+reportlab>=4.0
+openpyxl>=3.1
+# Optional: one-click "Send to Google Sheets" (see README)
+# gspread>=6.0
