@@ -275,11 +275,33 @@
     (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { checks.push(M.videoAdCheck(a, format)); }); });
     var errs = checks.filter(function (x) { return !x.valid; });
     ck({ id: 'vlen', cat: 'Ads & creative', guide: 'VID-2', weight: 5, status: !checks.length || errs.length ? 'fail' : 'pass', title: 'Video ads meet format requirements', detail: errs.length ? errs[0].errors.join('; ') : checks.length ? 'All video ads are eligible for ' + D.VIDEO_FORMATS[format].name + '.' : 'No video ads.', fix: 'Match the length to the format (bumper ≤ 6s, non-skippable ≤ 15s).' });
-    var hook = checks.filter(function (x, i) { return true; });
-    var noHook = 0, noCta = 0;
-    (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { if (!a.hook || !a.brandEarly) noHook++; if (!a.cta || (!a.headline && format !== 'bumper')) noCta++; }); });
-    ck({ id: 'vhook', cat: 'Ads & creative', guide: 'VID-1', weight: 3, status: noHook ? 'warn' : 'pass', title: 'Hook and brand in the first 5 seconds', detail: noHook ? noHook + ' video ad(s) lack an early hook or brand.' : 'Videos open with a hook and early branding.', fix: 'Open with the problem/benefit and show your logo before the skip button.' });
-    ck({ id: 'vcta', cat: 'Ads & creative', guide: 'VID-3', weight: 2, status: noCta ? 'warn' : 'pass', title: 'CTA and headline added', detail: noCta ? noCta + ' video ad(s) are missing a CTA or headline.' : 'CTA and headline present.', fix: 'Add a CTA button (e.g., "Shop now") and a headline.' });
+    // ABCD creative framework, one check per letter
+    var ads = [];
+    (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { ads.push(a); }); });
+    D.ABCD.forEach(function (L) {
+      var items = L.items.filter(function (it) { return !(it[0] === 'headline' && format === 'bumper'); });
+      var missing = [];
+      ads.forEach(function (a) { items.forEach(function (it) { if (!a[it[0]] && missing.indexOf(it[1]) < 0) missing.push(it[1]); }); });
+      var have = ads.length ? 1 - missing.length / items.length : 0;
+      ck({ id: 'abcd-' + L.key, cat: 'Ads & creative', guide: 'VID-5', weight: L.key === 'A' || L.key === 'B' ? 3 : 2, status: !missing.length && ads.length ? 'pass' : have >= 0.5 ? 'warn' : 'fail',
+        title: 'Creative · ' + L.key + ' = ' + L.name, detail: missing.length ? 'Missing: ' + missing.join('; ') + '.' : 'Covered.', fix: L.items.map(function (it) { return it[1] + ' (' + it[2].toLowerCase() + ')'; }).join('; ') + '.' });
+    });
+    // placements
+    var chosen = (c.videoSurfaces || []).filter(function (k) { return D.YT_SURFACES[k]; });
+    var okFor = chosen.filter(function (k) { return D.YT_SURFACES[k].formats.indexOf(format) >= 0; });
+    var wrong = chosen.filter(function (k) { return okFor.indexOf(k) < 0; });
+    ck({ id: 'vplace', cat: 'Keywords & targeting', guide: 'VID-6', weight: 3, status: !okFor.length ? 'fail' : wrong.length ? 'warn' : 'pass', title: 'Placements accept this video format',
+      detail: !chosen.length ? 'No placements selected.' : !okFor.length ? 'None of the selected placements show ' + D.VIDEO_FORMATS[format].name + ' ads.' : wrong.length ? D.VIDEO_FORMATS[format].name + ' ads cannot run on: ' + wrong.map(function (k) { return D.YT_SURFACES[k].name; }).join(', ') + '.' : 'Running on: ' + okFor.map(function (k) { return D.YT_SURFACES[k].short; }).join(', ') + '.',
+      fix: 'In-stream formats run on YouTube videos, TV screens and partners; in-feed runs in feeds and YouTube search; Shorts runs in the Shorts feed.' });
+    var goalSales = state.account.goal === 'sales' || state.account.goal === 'leads';
+    var vertical = ads.some(function (a) { return a.aspect === '9:16'; });
+    var concerns = [];
+    if (goalSales && okFor.indexOf('ctv') >= 0) concerns.push('TV screens rarely drive clicks or sales (keep them for awareness)');
+    if (goalSales && okFor.indexOf('partners') >= 0) concerns.push('Google video partners bring cheaper, lower-quality views');
+    if (okFor.indexOf('shorts') >= 0 && !vertical) concerns.push('Shorts is selected but the video is not vertical (9:16)');
+    ck({ id: 'vplacegoal', cat: 'Strategy & structure', guide: 'VID-6', weight: 2, status: concerns.length ? 'warn' : 'pass', title: 'Placements fit the goal and the creative', detail: concerns.length ? concerns.join('; ') + '.' : 'Placements match the goal and the creative.', fix: 'Turn off placements that do not serve your goal, or add a vertical version for Shorts.' });
+    var inv = c.inventory || 'standard';
+    ck({ id: 'vinv', cat: 'Strategy & structure', guide: 'VID-6', weight: 1, status: inv === 'expanded' ? 'warn' : 'pass', title: 'Brand-safe inventory type', detail: D.INVENTORY_TYPES[inv].name + ': ' + D.INVENTORY_TYPES[inv].desc, fix: 'Use Standard inventory unless you have a reason to accept sensitive content.' });
     var goal = state.account.goal;
     var fitOk = goal === 'awareness' ? ['bumper', 'nonskip', 'shorts'].indexOf(format) >= 0 || c.bidStrategy === 'target_cpm'
       : goal === 'consideration' || goal === 'traffic' ? ['skippable', 'infeed'].indexOf(format) >= 0
@@ -409,7 +431,7 @@
     return s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'F';
   }
 
-  function money(v) { return '$' + (Math.round(v * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function money(v) { return (v < 0 ? '-$' : '$') + (Math.round(Math.abs(v) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function pct(v) { return (Math.round(v * 1000) / 10) + '%'; }
 
   function feedback(state, result, setup, perf, prev) {
@@ -422,7 +444,7 @@
 
     result.campaigns.forEach(function (c) {
       if (c.errors.length) add({ severity: 'critical', area: c.name, title: 'Campaign is not running', detail: c.errors.join('; ') + '.', action: 'Fix the issue in the campaign editor and run again.', guide: 'ACC-3' });
-      c.warnings.forEach(function (w) { add({ severity: 'warning', area: c.name, title: 'Part of this campaign did not serve', detail: w + '.', action: 'Complete the ad group\'s keywords/ads/targeting.', guide: 'STR-2' }); });
+      c.warnings.forEach(function (w) { add({ severity: 'warning', area: c.name, title: 'Setup problem that hurt this campaign', detail: w + '.', action: 'Fix it in the campaign editor; Google Ads would flag this as an error or limit the campaign.', guide: /bid|CPA|ROAS|CPM|tracking/i.test(w) ? 'BID-1' : /video|placement|Shorts|format/i.test(w) ? 'VID-6' : 'STR-2' }); });
     });
     if (!acc.conversionTracking) {
       add({ severity: 'critical', area: 'Measurement', title: 'You are flying blind: conversions are not tracked', detail: 'In real Google Ads your conversion columns would be empty. The simulator estimates ' + t.conversions + ' conversions (' + money(t.value) + '), but you could not see which keywords or ads produced them.', action: 'Turn on Google tag & conversion tracking in Business setup.', guide: 'ACC-1' });
@@ -499,8 +521,34 @@
     });
     result.campaigns.forEach(function (c) {
       if (c.type !== 'video' || c.errors.length) return;
-      if (c.format === 'skippable' && c.viewRate < 0.2) add({ severity: 'warning', area: c.name, title: 'Low view rate (' + pct(c.viewRate) + ')', detail: 'Most viewers skip before 30 seconds. Industry average ≈ ' + pct(ind.video.viewRate) + '.', action: 'Hook viewers in the first 5 seconds, keep it 15–60s, and target more relevant audiences.', guide: 'VID-1' });
+      if (c.format === 'skippable' && c.viewRate < 0.2) add({ severity: 'warning', area: c.name, title: 'Low view rate (' + pct(c.viewRate) + ')', detail: 'Most viewers skip before 30 seconds. Industry average ≈ ' + pct(ind.video.viewRate) + '.', action: 'Use the ABCD checklist: hook in the first 5 seconds, show and say the brand, show people and the product, end with a clear call to action. Keep it 15–60s.', guide: 'VID-5' });
       if (c.adRecallLift > 0) add({ severity: c.adRecallLift >= 8 ? 'success' : 'opportunity', area: c.name, title: 'Estimated ad recall lift: +' + c.adRecallLift.toFixed(1) + ' points', detail: 'Reach ' + (c.reach || 0).toLocaleString() + ' people, frequency ' + (c.frequency || 0).toFixed(1) + '. Video raises brand searches and direct traffic next round.', action: c.adRecallLift < 8 ? 'Show the brand early and use a hook to raise recall.' : 'Keep the creative; consider bumpers to reinforce the message.', guide: 'VID-1' });
+    });
+
+    // YouTube placements
+    var vs = result.videoSurfaces || [];
+    var byCamp = {};
+    vs.forEach(function (v) { (byCamp[v.campaignId] = byCamp[v.campaignId] || []).push(v); });
+    Object.keys(byCamp).forEach(function (cid) {
+      var rows = byCamp[cid].filter(function (v) { return v.impressions > 500; });
+      if (rows.length < 2) return;
+      var camp = rows[0].campaign;
+      var total = U.sum(rows, function (v) { return v.cost; });
+      var withConv = rows.filter(function (v) { return v.conversions > 0; });
+      if (withConv.length >= 2 && acc.goal !== 'awareness') {
+        withConv.sort(function (a, b) { return a.cpa - b.cpa; });
+        var best = withConv[0], worst = withConv[withConv.length - 1];
+        if (worst.cpa > best.cpa * 1.6) add({ severity: 'opportunity', area: camp, title: 'YouTube placements differ: ' + D.YT_SURFACES[best.surface].short + ' converts at ' + money(best.cpa) + ', ' + D.YT_SURFACES[worst.surface].short + ' at ' + money(worst.cpa), detail: 'Cost per conversion by placement this round (see Reports → YouTube placements).', action: 'Turn off or reduce placements that cost much more per conversion than your best one.', guide: 'VID-6' });
+      }
+      var ctv = rows.find(function (v) { return v.surface === 'ctv'; });
+      if (ctv && ctv.cost > total * 0.15) add({ severity: acc.goal === 'awareness' ? 'success' : 'info', area: camp, title: 'TV screens: ' + pct(ctv.viewRate) + ' view rate, +' + (ctv.adRecallLift || 0).toFixed(1) + ' pts ad recall, ' + ctv.clicks + ' clicks', detail: 'People watch YouTube on TVs with the sound on and rarely click.', action: acc.goal === 'awareness' ? 'Good fit for awareness. Make sure the brand is said in the voiceover.' : 'For sales or leads, consider turning TV screens off and moving that budget to in-stream or in-feed.', guide: 'VID-6' });
+      var pr = rows.find(function (v) { return v.surface === 'partners'; });
+      var ins = rows.find(function (v) { return v.surface === 'instream'; });
+      if (pr && ins && pr.viewRate && ins.viewRate && pr.viewRate < ins.viewRate * 0.8) add({ severity: 'opportunity', area: camp, title: 'Google video partners: view rate ' + pct(pr.viewRate) + ' vs ' + pct(ins.viewRate) + ' on YouTube', detail: 'Partner sites and apps are cheaper but viewers pay less attention.', action: 'Test the campaign with video partners turned off.', guide: 'VID-6' });
+      var sh = rows.find(function (v) { return v.surface === 'shorts'; });
+      var vc = state.campaigns.find(function (c2) { return c2.id === cid; });
+      var vert = vc && (vc.adGroups || []).some(function (g) { return (g.ads || []).some(function (a) { return a.aspect === '9:16'; }); });
+      if (sh && !vert) add({ severity: 'warning', area: camp, title: 'Horizontal video in the Shorts feed', detail: 'Shorts view rate ' + pct(sh.viewRate) + '. A 16:9 video shows small with black bars in a vertical feed.', action: 'Upload a 9:16 version (set aspect ratio to 9:16) or turn off the Shorts placement.', guide: 'VID-6' });
     });
 
     // Shopping products

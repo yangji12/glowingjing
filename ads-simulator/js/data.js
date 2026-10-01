@@ -8,33 +8,34 @@
   'use strict';
   var AdSim = (root.AdSim = root.AdSim || {});
 
-  // ctr/cvr are fractions, cpc in USD. value = default value per conversion (AOV or lead value).
+  // ctr/cvr are fractions, cpc in USD. value = default value per conversion (order value, or lead value =
+  // sale value x close rate), set so an average Search advertiser roughly breaks even after margin.
   // volume = relative search demand. competition = 0..1 auction pressure.
   // ages = relative conversion propensity for [18-24, 25-34, 35-44, 45-54, 55-64, 65+, unknown].
   var INDUSTRIES = {
-    retail:       { name: 'E-commerce & Retail',        search: { ctr: 0.065, cpc: 1.20, cvr: 0.029 }, display: { ctr: 0.0050, cpc: 0.50, cvr: 0.0060 }, video: { cpv: 0.030, viewRate: 0.31 }, shopping: { ctr: 0.0086, cpc: 0.66, cvr: 0.018 }, value: 75,   margin: 0.40, volume: 1.2, competition: 0.70, local: false, ages: [1.0, 1.2, 1.1, 1.0, 0.9, 0.7, 0.8],
+    retail:       { name: 'E-commerce & Retail',        search: { ctr: 0.065, cpc: 1.20, cvr: 0.029 }, display: { ctr: 0.0050, cpc: 0.50, cvr: 0.0060 }, video: { cpv: 0.030, viewRate: 0.31 }, shopping: { ctr: 0.0086, cpc: 0.66, cvr: 0.018 }, value: 100,   margin: 0.40, volume: 1.2, competition: 0.70, local: false, ages: [1.0, 1.2, 1.1, 1.0, 0.9, 0.7, 0.8],
       vocab: 'shop store products clothing apparel shoes accessories gifts home goods', competitors: ['amazon', 'walmart', 'target'] },
-    travel:       { name: 'Travel & Hospitality',       search: { ctr: 0.090, cpc: 1.55, cvr: 0.036 }, display: { ctr: 0.0060, cpc: 0.45, cvr: 0.0050 }, video: { cpv: 0.030, viewRate: 0.31 }, shopping: { ctr: 0.0080, cpc: 0.70, cvr: 0.015 }, value: 420,  margin: 0.25, volume: 1.0, competition: 0.65, local: false, ages: [0.8, 1.1, 1.1, 1.1, 1.1, 1.0, 0.8],
+    travel:       { name: 'Travel & Hospitality',       search: { ctr: 0.090, cpc: 1.55, cvr: 0.036 }, display: { ctr: 0.0060, cpc: 0.45, cvr: 0.0050 }, video: { cpv: 0.030, viewRate: 0.31 }, shopping: { ctr: 0.0080, cpc: 0.70, cvr: 0.015 }, value: 165,  margin: 0.25, volume: 1.0, competition: 0.65, local: false, ages: [0.8, 1.1, 1.1, 1.1, 1.1, 1.0, 0.8],
       vocab: 'travel trip vacation hotel tour tours flights booking resort holiday getaway', competitors: ['expedia', 'booking', 'airbnb'] },
-    education:    { name: 'Education & Training',       search: { ctr: 0.061, cpc: 4.00, cvr: 0.070 }, display: { ctr: 0.0050, cpc: 0.60, cvr: 0.0080 }, video: { cpv: 0.035, viewRate: 0.30 }, shopping: { ctr: 0.0070, cpc: 0.80, cvr: 0.012 }, value: 1500, margin: 0.50, volume: 0.8, competition: 0.60, local: false, ages: [1.8, 1.4, 0.9, 0.6, 0.4, 0.2, 0.8],
+    education:    { name: 'Education & Training',       search: { ctr: 0.061, cpc: 4.00, cvr: 0.070 }, display: { ctr: 0.0050, cpc: 0.60, cvr: 0.0080 }, video: { cpv: 0.035, viewRate: 0.30 }, shopping: { ctr: 0.0070, cpc: 0.80, cvr: 0.012 }, value: 110, margin: 0.50, volume: 0.8, competition: 0.60, local: false, ages: [1.8, 1.4, 0.9, 0.6, 0.4, 0.2, 0.8],
       vocab: 'course courses class classes degree program online learning school training certificate certification tutoring bootcamp', competitors: ['coursera', 'udemy', 'edx'] },
-    health:       { name: 'Health & Fitness',           search: { ctr: 0.061, cpc: 3.50, cvr: 0.071 }, display: { ctr: 0.0059, cpc: 0.70, cvr: 0.0080 }, video: { cpv: 0.030, viewRate: 0.32 }, shopping: { ctr: 0.0085, cpc: 0.70, cvr: 0.017 }, value: 480,  margin: 0.60, volume: 0.9, competition: 0.60, local: true,  ages: [1.3, 1.3, 1.1, 0.9, 0.7, 0.6, 0.8],
+    health:       { name: 'Health & Fitness',           search: { ctr: 0.061, cpc: 3.50, cvr: 0.071 }, display: { ctr: 0.0059, cpc: 0.70, cvr: 0.0080 }, video: { cpv: 0.030, viewRate: 0.32 }, shopping: { ctr: 0.0085, cpc: 0.70, cvr: 0.017 }, value: 80,  margin: 0.60, volume: 0.9, competition: 0.60, local: true,  ages: [1.3, 1.3, 1.1, 0.9, 0.7, 0.6, 0.8],
       vocab: 'gym fitness training personal trainer workout yoga pilates classes membership health studio', competitors: ['planet fitness', 'la fitness', 'orangetheory'] },
-    legal:        { name: 'Legal Services',             search: { ctr: 0.052, cpc: 8.60, cvr: 0.061 }, display: { ctr: 0.0045, cpc: 0.72, cvr: 0.0080 }, video: { cpv: 0.040, viewRate: 0.28 }, shopping: { ctr: 0.0060, cpc: 1.00, cvr: 0.010 }, value: 2500, margin: 0.40, volume: 0.5, competition: 0.90, local: true,  ages: [0.6, 1.0, 1.2, 1.2, 1.1, 0.9, 0.8],
+    legal:        { name: 'Legal Services',             search: { ctr: 0.052, cpc: 8.60, cvr: 0.061 }, display: { ctr: 0.0045, cpc: 0.72, cvr: 0.0080 }, video: { cpv: 0.040, viewRate: 0.28 }, shopping: { ctr: 0.0060, cpc: 1.00, cvr: 0.010 }, value: 325, margin: 0.40, volume: 0.5, competition: 0.90, local: true,  ages: [0.6, 1.0, 1.2, 1.2, 1.1, 0.9, 0.8],
       vocab: 'lawyer lawyers attorney attorneys law firm legal injury accident divorce consultation claim', competitors: ['morgan and morgan', 'legalzoom', 'avvo'] },
-    homeservices: { name: 'Home Services',              search: { ctr: 0.058, cpc: 6.50, cvr: 0.110 }, display: { ctr: 0.0050, cpc: 0.80, cvr: 0.0090 }, video: { cpv: 0.035, viewRate: 0.29 }, shopping: { ctr: 0.0070, cpc: 0.90, cvr: 0.012 }, value: 450,  margin: 0.45, volume: 0.7, competition: 0.80, local: true,  ages: [0.3, 0.9, 1.3, 1.3, 1.2, 1.0, 0.8],
+    homeservices: { name: 'Home Services',              search: { ctr: 0.058, cpc: 6.50, cvr: 0.110 }, display: { ctr: 0.0050, cpc: 0.80, cvr: 0.0090 }, video: { cpv: 0.035, viewRate: 0.29 }, shopping: { ctr: 0.0070, cpc: 0.90, cvr: 0.012 }, value: 125,  margin: 0.45, volume: 0.7, competition: 0.80, local: true,  ages: [0.3, 0.9, 1.3, 1.3, 1.2, 1.0, 0.8],
       vocab: 'plumber plumbing repair installation hvac heating cooling cleaning roofing electrician contractor remodel', competitors: ['angi', 'homeadvisor', 'thumbtack'] },
-    b2b:          { name: 'B2B / SaaS',                 search: { ctr: 0.058, cpc: 5.50, cvr: 0.035 }, display: { ctr: 0.0046, cpc: 0.79, cvr: 0.0080 }, video: { cpv: 0.045, viewRate: 0.27 }, shopping: { ctr: 0.0060, cpc: 1.10, cvr: 0.010 }, value: 1200, margin: 0.80, volume: 0.6, competition: 0.75, local: false, ages: [0.5, 1.2, 1.3, 1.2, 0.9, 0.4, 0.8],
+    b2b:          { name: 'B2B / SaaS',                 search: { ctr: 0.058, cpc: 5.50, cvr: 0.035 }, display: { ctr: 0.0046, cpc: 0.79, cvr: 0.0080 }, video: { cpv: 0.045, viewRate: 0.27 }, shopping: { ctr: 0.0060, cpc: 1.10, cvr: 0.010 }, value: 185, margin: 0.80, volume: 0.6, competition: 0.75, local: false, ages: [0.5, 1.2, 1.3, 1.2, 0.9, 0.4, 0.8],
       vocab: 'software platform tool app saas business team management solution crm automation project workflow', competitors: ['salesforce', 'hubspot', 'monday'] },
-    finance:      { name: 'Finance & Insurance',        search: { ctr: 0.058, cpc: 4.50, cvr: 0.051 }, display: { ctr: 0.0052, cpc: 0.86, cvr: 0.0100 }, video: { cpv: 0.040, viewRate: 0.28 }, shopping: { ctr: 0.0060, cpc: 1.00, cvr: 0.010 }, value: 800,  margin: 0.50, volume: 0.8, competition: 0.85, local: false, ages: [0.6, 1.1, 1.2, 1.2, 1.1, 1.0, 0.8],
+    finance:      { name: 'Finance & Insurance',        search: { ctr: 0.058, cpc: 4.50, cvr: 0.051 }, display: { ctr: 0.0052, cpc: 0.86, cvr: 0.0100 }, video: { cpv: 0.040, viewRate: 0.28 }, shopping: { ctr: 0.0060, cpc: 1.00, cvr: 0.010 }, value: 170,  margin: 0.50, volume: 0.8, competition: 0.85, local: false, ages: [0.6, 1.1, 1.2, 1.2, 1.1, 1.0, 0.8],
       vocab: 'insurance loan loans mortgage finance credit bank banking investment advisor accounting tax', competitors: ['geico', 'rocket mortgage', 'nerdwallet'] },
-    restaurants:  { name: 'Restaurants & Food',         search: { ctr: 0.078, cpc: 1.95, cvr: 0.075 }, display: { ctr: 0.0060, cpc: 0.40, cvr: 0.0080 }, video: { cpv: 0.025, viewRate: 0.33 }, shopping: { ctr: 0.0090, cpc: 0.60, cvr: 0.020 }, value: 45,   margin: 0.30, volume: 1.1, competition: 0.55, local: true,  ages: [1.3, 1.3, 1.1, 0.9, 0.8, 0.6, 0.8],
+    restaurants:  { name: 'Restaurants & Food',         search: { ctr: 0.078, cpc: 1.95, cvr: 0.075 }, display: { ctr: 0.0060, cpc: 0.40, cvr: 0.0080 }, video: { cpv: 0.025, viewRate: 0.33 }, shopping: { ctr: 0.0090, cpc: 0.60, cvr: 0.020 }, value: 80,   margin: 0.30, volume: 1.1, competition: 0.55, local: true,  ages: [1.3, 1.3, 1.1, 0.9, 0.8, 0.6, 0.8],
       vocab: 'restaurant food menu delivery takeout dining pizza cafe coffee catering brunch dinner', competitors: ['doordash', 'ubereats', 'grubhub'] },
-    realestate:   { name: 'Real Estate',                search: { ctr: 0.084, cpc: 2.10, cvr: 0.025 }, display: { ctr: 0.0100, cpc: 0.75, cvr: 0.0080 }, video: { cpv: 0.030, viewRate: 0.30 }, shopping: { ctr: 0.0070, cpc: 0.80, cvr: 0.010 }, value: 2500, margin: 0.35, volume: 0.8, competition: 0.70, local: true,  ages: [0.4, 1.3, 1.4, 1.1, 0.9, 0.7, 0.8],
+    realestate:   { name: 'Real Estate',                search: { ctr: 0.084, cpc: 2.10, cvr: 0.025 }, display: { ctr: 0.0100, cpc: 0.75, cvr: 0.0080 }, video: { cpv: 0.030, viewRate: 0.30 }, shopping: { ctr: 0.0070, cpc: 0.80, cvr: 0.010 }, value: 225, margin: 0.35, volume: 0.8, competition: 0.70, local: true,  ages: [0.4, 1.3, 1.4, 1.1, 0.9, 0.7, 0.8],
       vocab: 'homes home real estate realtor agent house houses condo apartment property listing listings sell', competitors: ['zillow', 'redfin', 'realtor'] },
-    automotive:   { name: 'Automotive',                 search: { ctr: 0.064, cpc: 2.40, cvr: 0.090 }, display: { ctr: 0.0060, cpc: 0.58, cvr: 0.0100 }, video: { cpv: 0.030, viewRate: 0.31 }, shopping: { ctr: 0.0080, cpc: 0.70, cvr: 0.015 }, value: 600,  margin: 0.30, volume: 0.9, competition: 0.70, local: true,  ages: [0.7, 1.1, 1.2, 1.1, 1.0, 0.8, 0.8],
+    automotive:   { name: 'Automotive',                 search: { ctr: 0.064, cpc: 2.40, cvr: 0.090 }, display: { ctr: 0.0060, cpc: 0.58, cvr: 0.0100 }, video: { cpv: 0.030, viewRate: 0.31 }, shopping: { ctr: 0.0080, cpc: 0.70, cvr: 0.015 }, value: 85,  margin: 0.30, volume: 0.9, competition: 0.70, local: true,  ages: [0.7, 1.1, 1.2, 1.1, 1.0, 0.8, 0.8],
       vocab: 'car cars auto dealer dealership vehicle vehicles repair used lease suv truck tires', competitors: ['carmax', 'carvana', 'autotrader'] },
-    beauty:       { name: 'Beauty & Personal Care',     search: { ctr: 0.069, cpc: 2.00, cvr: 0.055 }, display: { ctr: 0.0050, cpc: 0.50, cvr: 0.0100 }, video: { cpv: 0.025, viewRate: 0.33 }, shopping: { ctr: 0.0095, cpc: 0.60, cvr: 0.021 }, value: 55,   margin: 0.55, volume: 1.0, competition: 0.65, local: false, ages: [1.4, 1.4, 1.1, 0.9, 0.7, 0.5, 0.8],
+    beauty:       { name: 'Beauty & Personal Care',     search: { ctr: 0.069, cpc: 2.00, cvr: 0.055 }, display: { ctr: 0.0050, cpc: 0.50, cvr: 0.0100 }, video: { cpv: 0.025, viewRate: 0.33 }, shopping: { ctr: 0.0095, cpc: 0.60, cvr: 0.021 }, value: 65,   margin: 0.55, volume: 1.0, competition: 0.65, local: false, ages: [1.4, 1.4, 1.1, 0.9, 0.7, 0.5, 0.8],
       vocab: 'beauty skincare skin makeup salon spa hair cosmetics nails serum cream', competitors: ['sephora', 'ulta', 'glossier'] }
   };
 
@@ -155,6 +156,37 @@
     shorts:    { name: 'YouTube Shorts', maxLen: 60, billing: 'cpm', desc: 'Vertical (9:16) video between Shorts. Best with vertical creative under 60s.' }
   };
 
+  // Where YouTube ads can appear. share = part of a segment's video inventory on that surface;
+  // the multipliers are relative to an in-stream ad on YouTube videos.
+  var YT_SURFACES = {
+    instream: { name: 'YouTube videos (in-stream)', short: 'In-stream', formats: ['skippable', 'nonskip', 'bumper'], share: 0.42, cost: 1.0, view: 1.0, ctr: 1.0, cvr: 1.0, recall: 1.0,
+      desc: 'Before, during or after YouTube videos on phones, computers and tablets. The core video placement.' },
+    feed: { name: 'Home & Watch Next feeds', short: 'Feeds', formats: ['infeed'], share: 0.16, cost: 1.15, view: 1.0, ctr: 1.3, cvr: 1.1, recall: 0.6,
+      desc: 'A thumbnail and headline in the YouTube home feed and next to videos. People choose to watch, so views are high quality.' },
+    search: { name: 'YouTube search results', short: 'Search', formats: ['infeed'], share: 0.07, cost: 1.3, view: 1.25, ctr: 1.7, cvr: 1.5, recall: 0.6,
+      desc: 'An in-feed ad at the top of YouTube search results. Highest intent, small volume.' },
+    shorts: { name: 'YouTube Shorts', short: 'Shorts', formats: ['shorts', 'skippable', 'bumper'], share: 0.2, cost: 0.6, view: 0.9, ctr: 0.55, cvr: 0.7, recall: 0.85,
+      desc: 'Between Shorts in the vertical feed. Cheap reach for vertical (9:16) creative; horizontal videos look small here.' },
+    ctv: { name: 'TV screens (Connected TV)', short: 'TV screens', formats: ['skippable', 'nonskip', 'bumper'], share: 0.1, cost: 1.6, view: 1.45, ctr: 0.04, cvr: 0.25, recall: 1.35,
+      desc: 'YouTube on smart TVs. Big screen, high completion and recall, but people rarely click. Sound on.' },
+    partners: { name: 'Google video partners', short: 'Video partners', formats: ['skippable', 'nonskip', 'bumper', 'infeed'], share: 0.18, cost: 0.65, view: 0.72, ctr: 0.65, cvr: 0.6, recall: 0.65,
+      desc: 'Video ads on partner websites and apps outside YouTube. Cheaper, more reach, lower quality and brand-safety control.' }
+  };
+
+  var INVENTORY_TYPES = {
+    expanded: { name: 'Expanded inventory', reach: 1.12, cost: 0.9, quality: 0.9, desc: 'All eligible videos, including some sensitive content. Most reach, lowest cost.' },
+    standard: { name: 'Standard inventory', reach: 1.0, cost: 1.0, quality: 1.0, desc: 'Recommended for most brands. Excludes highly sensitive content.' },
+    limited: { name: 'Limited inventory', reach: 0.7, cost: 1.15, quality: 1.04, desc: 'Strictest brand safety. Less reach, higher cost.' }
+  };
+
+  // Google's ABCD framework for effective YouTube creative.
+  var ABCD = [
+    { key: 'A', name: 'Attract', items: [['hook', 'Strong hook in the first 5 seconds', 'Open with the problem, a benefit, or something surprising'], ['pacing', 'Fast pacing and tight framing', 'Quick cuts and close-up shots hold attention']] },
+    { key: 'B', name: 'Brand', items: [['brandEarly', 'Brand or logo on screen in the first 5 seconds', 'So even people who skip remember you'], ['brandAudio', 'Brand name said in the voiceover', 'Works when people are not looking, and on TV screens']] },
+    { key: 'C', name: 'Connect', items: [['people', 'People or faces on screen', 'Human connection keeps viewers watching'], ['productDemo', 'Shows the product or service in use', 'Demonstrate the benefit, not just the logo'], ['captions', 'Captions / text on screen', 'Many people watch with the sound off']] },
+    { key: 'D', name: 'Direct', items: [['endCard', 'Clear call to action on an end card', 'Tell viewers exactly what to do next'], ['cta', 'CTA button text', 'Shown as a button on the ad'], ['headline', 'Headline', 'Shown next to the CTA and in feeds']] }
+  ];
+
   // Search-term modifiers used to expand phrase and broad match keywords.
   var MODIFIERS = {
     high: [
@@ -212,6 +244,8 @@
     { id: 'VID-1', cat: 'Video', title: 'Hook viewers in the first 5 seconds', text: 'Show your brand and the core message in the first 5 seconds—before the Skip button appears. Strong hooks raise view rate and ad recall.' },
     { id: 'VID-2', cat: 'Video', title: 'Match video length to the format', text: 'Bumper ads: 6 seconds max. Non-skippable in-stream: 15 seconds max. Skippable: any length, but 15–60 seconds tends to perform best. Shorts: vertical 9:16, under 60 seconds.' },
     { id: 'VID-3', cat: 'Video', title: 'Add a call to action and companion banner', text: 'Add a CTA button and headline so interested viewers can click through to your website; a companion banner extends your message on desktop.' },
+    { id: 'VID-5', cat: 'Video', title: 'Use the ABCD creative framework', text: 'Attract (hook in the first 5 seconds, fast pacing), Brand (show and say the brand early), Connect (people, product in use, captions), Direct (a clear call to action and end card). Ads that follow ABCD earn higher view rates, recall and conversions.' },
+    { id: 'VID-6', cat: 'Video', title: 'Choose YouTube placements on purpose', text: 'In-stream suits most goals; in-feed (Home, Watch Next, search) wins high-intent viewers who choose to watch; Shorts is cheap reach that needs vertical video; TV screens build recall but rarely drive clicks; video partners add cheap reach of lower quality. Match placements to the format and the goal, and pick an inventory type that fits your brand-safety needs.' },
     { id: 'VID-4', cat: 'Video', title: 'Choose format and bidding by goal', text: 'Awareness: bumper/non-skippable with Target CPM. Consideration: skippable in-stream or in-feed with Maximum CPV. Action: skippable with conversion bidding (needs tracking).' },
     { id: 'SHP-1', cat: 'Shopping', title: 'Write descriptive product titles', text: 'Front-load Brand + Product type + key attributes (color, size, material, model). Titles of 70–150 characters perform best; only the first ~70 are visible, so put the most important words first.' },
     { id: 'SHP-2', cat: 'Shopping', title: 'Provide complete product data', text: 'Include GTIN, brand, a high-quality image, accurate price and availability. Products missing required data are disapproved; products missing GTIN get less visibility.' },
@@ -231,7 +265,7 @@
       id: 'coffee', label: 'Brew Haven Coffee (online retail)',
       account: {
         businessName: 'Brew Haven Coffee', website: 'https://www.brewhaven.example', industry: 'retail', serviceArea: 'national',
-        goal: 'sales', value: 38, margin: 0.45, brandColor: '#6b3e26',
+        goal: 'sales', value: 60, margin: 0.55, brandColor: '#6b3e26',
         description: 'Small-batch specialty coffee roaster selling fresh roasted whole bean coffee, ground coffee, espresso blends, single origin coffee, coffee subscriptions and brewing gear online with free shipping over $35.'
       },
       scan: {
@@ -255,7 +289,7 @@
       id: 'law', label: 'Summit Injury Law (local legal leads)',
       account: {
         businessName: 'Summit Injury Law', website: 'https://www.summitinjurylaw.example', industry: 'legal', serviceArea: 'local',
-        goal: 'leads', value: 2500, margin: 0.4, brandColor: '#1d3557',
+        goal: 'leads', value: 600, margin: 0.4, brandColor: '#1d3557',
         description: 'Denver personal injury lawyers handling car accident, truck accident, slip and fall and workplace injury claims. Free consultation, no fee unless we win.'
       },
       scan: {
@@ -274,7 +308,7 @@
       id: 'gym', label: 'FitLab Studio (local fitness)',
       account: {
         businessName: 'FitLab Studio', website: 'https://www.fitlabstudio.example', industry: 'health', serviceArea: 'local',
-        goal: 'leads', value: 480, margin: 0.6, brandColor: '#e4572e',
+        goal: 'leads', value: 180, margin: 0.6, brandColor: '#e4572e',
         description: 'Boutique fitness studio in Austin offering HIIT classes, strength training, personal training and yoga. First class free, flexible memberships.'
       },
       scan: {
@@ -293,7 +327,7 @@
       id: 'saas', label: 'TaskFlow (B2B SaaS)',
       account: {
         businessName: 'TaskFlow', website: 'https://www.taskflow.example', industry: 'b2b', serviceArea: 'national',
-        goal: 'leads', value: 1200, margin: 0.8, brandColor: '#3a0ca3',
+        goal: 'leads', value: 400, margin: 0.8, brandColor: '#3a0ca3',
         description: 'TaskFlow is project management software for small teams: task boards, time tracking, workflow automation and client portals. 14-day free trial.'
       },
       scan: {
@@ -314,7 +348,7 @@
     INDUSTRIES: INDUSTRIES, AGE_BANDS: AGE_BANDS, AGE_SHARE: AGE_SHARE, GENDERS: GENDERS,
     LOCATIONS: LOCATIONS, AUDIENCES: AUDIENCES, AUDIENCE_TYPES: AUDIENCE_TYPES, TOPICS: TOPICS,
     CAMPAIGN_TYPES: CAMPAIGN_TYPES, GOALS: GOALS, BID_STRATEGIES: BID_STRATEGIES,
-    VIDEO_FORMATS: VIDEO_FORMATS, MODIFIERS: MODIFIERS, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
+    VIDEO_FORMATS: VIDEO_FORMATS, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
     LOW_INTENT_WORDS: LOW_INTENT_WORDS, CTA_WORDS: CTA_WORDS, GUIDELINES: GUIDELINES,
     GUIDE_INDEX: GUIDE_INDEX, TEMPLATES: TEMPLATES
   };

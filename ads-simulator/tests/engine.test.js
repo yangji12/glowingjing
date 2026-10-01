@@ -103,13 +103,14 @@ test('national targeting hurts a local business conversion rate', () => {
   assert.ok(mk(['r25']).cvr > mk(['us']).cvr * 1.8);
 });
 
-test('conversion bidding without tracking is blocked or penalised', () => {
+test('conversion bidding without tracking runs, but poorly and with a clear warning', () => {
   const s = coffee();
   s.campaigns[0].bidStrategy = 'target_cpa';
   s.campaigns[0].targetCpa = 20;
   const r = run(s);
-  assert.strictEqual(r.campaigns[0].status, 'Not running');
-  assert.ok(r.feedback.some((f) => f.severity === 'critical'));
+  assert.notStrictEqual(r.campaigns[0].status, 'Not running');
+  assert.ok(r.campaigns[0].warnings.some((w) => /conversion tracking/.test(w)));
+  assert.ok(r.feedback.some((f) => f.severity === 'critical' && /not tracked/.test(f.title)));
 });
 
 test('video format length rules are enforced', () => {

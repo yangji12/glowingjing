@@ -40,7 +40,13 @@
     var radius = locs.filter(function (l) { return l.kind === 'radius'; }).sort(function (a, b) { return b.weight - a.weight; })[0];
     var countries = locs.filter(function (l) { return l.kind === 'country'; });
     var parts = countries.slice();
-    if (radius && !countries.some(function (l) { return l.id === 'us'; })) parts.push(radius);
+    if (radius && !countries.some(function (l) { return l.id === 'us'; })) {
+      // Local-intent businesses get a much larger share of searches inside their own area
+      // than population alone suggests ("plumber", "gym near me" are searched locally).
+      var ind = D.INDUSTRIES[acc.industry] || {};
+      var localBoost = ind.local || acc.serviceArea === 'local' ? 6 : 1;
+      parts.push(Object.assign({}, radius, { weight: Math.min(0.3, radius.weight * localBoost) }));
+    }
     var w = U.sum(parts, function (l) { return l.weight; });
     var cpc = U.sum(parts, function (l) { return l.weight * l.cpc; }) / w;
     var cvr = U.sum(parts, function (l) {
@@ -128,6 +134,41 @@
     return { factor: 0.95, status: 'limited-data' };
   }
 
+  // Turns the campaign's bid settings into something that can run. Misconfigurations that
+  // Google would flag (no conversion data, missing target) fall back to a sensible default
+  // with a warning, so students see results plus a clear explanation instead of an empty report.
+  function resolveStrategy(c, type, res, acc, bench) {
+    var out = { strategy: c.bidStrategy, targetCpa: Number(c.targetCpa) || 0, targetRoas: Number(c.targetRoas) || 0 };
+    var bs = D.BID_STRATEGIES[out.strategy];
+    if (!bs || bs.types.indexOf(type) < 0) {
+      out.strategy = type === 'video' ? 'max_cpv' : 'max_clicks';
+      res.warnings.push('The bid strategy is not available for this campaign type, so ' + D.BID_STRATEGIES[out.strategy].name + ' was used');
+      return out;
+    }
+    if ((out.strategy === 'target_cpa' || out.strategy === 'target_roas') && !acc.conversionTracking) {
+      res.warnings.push(bs.name + ' had no conversion data to aim for (conversion tracking is off), so it bid blindly and wasted budget');
+      out.strategy = type === 'shopping' ? 'max_clicks' : 'max_conversions';
+      return out;
+    }
+    if (out.strategy === 'target_cpa' && !(out.targetCpa > 0)) {
+      out.targetCpa = Math.round(bench.cpc / bench.cvr);
+      res.warnings.push('No Target CPA was set, so the industry average ($' + out.targetCpa + ') was used');
+    }
+    if (out.strategy === 'target_roas' && !(out.targetRoas > 0)) {
+      out.targetRoas = Math.round(120 / (acc.margin || 0.4));
+      res.warnings.push('No Target ROAS was set, so ' + out.targetRoas + '% (a little above break-even) was used');
+    }
+    return out;
+  }
+
+  // Display/video conversion rate. Leads from people who were not searching are weaker:
+  // keep cost per conversion at least 3x the Search benchmark, so Display never looks
+  // better than Search for capturing demand (it is for reach and remarketing).
+  function upperFunnelCvr(ind) {
+    var searchCpa = ind.search.cpc / ind.search.cvr;
+    return Math.min(ind.display.cvr, ind.display.cpc / (3 * searchCpa));
+  }
+
   function landingPageQuality(url, text, ctx) {
     if (!url) return 0.1;
     var acc = ctx.acc;
@@ -153,6 +194,21 @@
 
   function componentLabel(v) {
     return v < 0.4 ? 'Below average' : v < 0.68 ? 'Average' : 'Above average';
+  }
+
+  // Automated bidding raises or lowers bids until the month's spend reaches the budget.
+  // Returns the lowest bid level that reaches it; pacing (throttle) then trims the overshoot.
+  // (Taking the level just below instead can win nothing when auctions have price floors.)
+  function fitBudget(evaluate, budget, lo, hi) {
+    var evHi = evaluate(hi);
+    if (evHi.cost <= budget) return { ev: evHi, scale: hi };
+    var evLo = evaluate(lo);
+    if (evLo.cost >= budget) return { ev: evLo, scale: lo };
+    for (var i = 0; i < 22; i++) {
+      var mid = (lo + hi) / 2;
+      if (evaluate(mid).cost > budget) hi = mid; else lo = mid;
+    }
+    return { ev: evaluate(hi), scale: hi };
   }
 
   function rankShare(ev) {
@@ -307,14 +363,9 @@
     if (!dev.volume) { res.errors.push('All devices are excluded (−100%)'); return res; }
     var learn = learningFactor(c, ctx);
     res.learning = learn.status;
-    var strategy = c.bidStrategy;
+    var bid = resolveStrategy(c, 'search', res, acc, ind.search);
+    var strategy = bid.strategy;
     var bs = D.BID_STRATEGIES[strategy];
-    if (!bs || bs.types.indexOf('search') < 0) { res.errors.push('Bid strategy is not available for Search'); return res; }
-    if ((strategy === 'target_cpa' || strategy === 'target_roas') && !acc.conversionTracking) {
-      res.errors.push(bs.name + ' cannot run without conversion tracking'); return res;
-    }
-    if (strategy === 'target_cpa' && !(c.targetCpa > 0)) { res.errors.push('Set a Target CPA'); return res; }
-    if (strategy === 'target_roas' && !(c.targetRoas > 0)) { res.errors.push('Set a Target ROAS'); return res; }
     var budget = (Number(c.dailyBudget) || 0) * BUDGET_DAYS;
     if (!(budget > 0)) { res.errors.push('Daily budget is 0'); return res; }
     var net = c.networks || {};
@@ -335,11 +386,17 @@
       var strengths = (g.ads || []).map(function (a) { return M.rsaStrength(a, kws); });
       var best = null, bestAd = null;
       strengths.forEach(function (s, i) { if (s.valid && (!best || s.points > best.points)) { best = s; bestAd = g.ads[i]; } });
+      if (!best) {
+        // An incomplete ad still serves in the simulator, as a weak (Poor) ad.
+        strengths.forEach(function (s, i) { if (s.serves && (!best || s.points > best.points)) { best = Object.assign({}, s, { label: 'Poor' }); bestAd = g.ads[i]; } });
+        if (best) res.warnings.push('Ad group "' + g.name + '" ran with an incomplete ad (needs 3+ headlines and 2+ descriptions), which lowered its results');
+      }
+      if (bestAd && !bestAd.finalUrl) bestAd = Object.assign({}, bestAd, { finalUrl: acc.website });
       var gRes = { id: g.id, name: g.name, campaignId: c.id, campaign: c.name, adStrength: best ? best.label : 'Incomplete', keywords: kws.length };
       Object.assign(gRes, emptyMetrics());
       res.adGroups.push(gRes);
       if (!kws.length) { res.warnings.push('Ad group "' + g.name + '" has no keywords'); return; }
-      if (!best) { res.warnings.push('Ad group "' + g.name + '" has no valid responsive search ad'); return; }
+      if (!best) { res.warnings.push('Ad group "' + g.name + '" has an empty ad, so it could not run'); return; }
       var negs = campNeg.concat(U.parseKeywordList(g.negativesText));
       var tight = themeTightness(kws);
       var headlines = best.headlines;
@@ -395,8 +452,8 @@
           b = smartActive ? u.benchCpc * 1.5 * Math.sqrt(u.predCvr / avgPredCvr) * scale : u.benchCpc * 1.4 * scale; break;
         case 'max_conv_value':
           b = smartActive ? u.benchCpc * 1.5 * Math.sqrt(u.predCvr / avgPredCvr) * scale : u.benchCpc * 1.4 * scale; break;
-        case 'target_cpa': b = c.targetCpa * u.predCvr * learn.factor; break;
-        case 'target_roas': b = u.predCvr * acc.value / (c.targetRoas / 100) * learn.factor; break;
+        case 'target_cpa': b = bid.targetCpa * u.predCvr * learn.factor; break;
+        case 'target_roas': b = u.predCvr * acc.value / (bid.targetRoas / 100) * learn.factor; break;
         case 'target_is':
           var t = U.clamp((c.targetIs || 70) / 100, 0.05, 0.94);
           var r = Math.exp(Math.log((t / 0.95) / (1 - t / 0.95)) / 2.5 - 0.1);
@@ -445,19 +502,9 @@
     var scale = 1;
     var ev;
     if (bs.auto) {
-      // Automated bidding raises or lowers bids to spend (but not exceed) the budget.
-      var lo = 0.1, hi = 3;
-      var evHi = evaluate(hi);
-      if (evHi.cost <= searchBudget) { scale = hi; ev = evHi; }
-      else {
-        for (var i = 0; i < 22; i++) {
-          var mid = (lo + hi) / 2;
-          var e = evaluate(mid);
-          if (e.cost > searchBudget) hi = mid; else lo = mid;
-        }
-        scale = lo;
-        ev = evaluate(lo);
-      }
+      var fitted = fitBudget(evaluate, searchBudget, 0.1, 3);
+      ev = fitted.ev;
+      scale = fitted.scale;
     } else {
       ev = evaluate(1);
     }
@@ -618,22 +665,29 @@
     if (!dev.volume) { res.errors.push('All devices are excluded (−100%)'); return res; }
     var learn = learningFactor(c, ctx);
     res.learning = learn.status;
-    var strategy = c.bidStrategy;
+    var bid = resolveStrategy(c, 'display', res, acc, ind.display);
+    var strategy = bid.strategy;
     var bs = D.BID_STRATEGIES[strategy];
-    if (!bs || bs.types.indexOf('display') < 0) { res.errors.push('Bid strategy is not available for Display'); return res; }
-    if (strategy === 'target_cpa' && (!acc.conversionTracking || !(c.targetCpa > 0))) { res.errors.push('Target CPA needs conversion tracking and a target'); return res; }
     var budget = (Number(c.dailyBudget) || 0) * BUDGET_DAYS;
     if (!(budget > 0)) { res.errors.push('Daily budget is 0'); return res; }
     var smartActive = SMART.indexOf(strategy) >= 0 && acc.conversionTracking;
 
     var units = [];
     (c.adGroups || []).forEach(function (g) {
-      var strengths = (g.ads || []).map(function (a) { return M.rdaStrength(a); });
+      var ads = (g.ads || []).map(function (a) {
+        // fill what Google would take from the account
+        return Object.assign({}, a, { businessName: a.businessName || acc.businessName, finalUrl: a.finalUrl || acc.website, logoUrl: a.logoUrl || acc.logoUrl });
+      });
+      var strengths = ads.map(function (a) { return M.rdaStrength(a); });
       var best = null, bestAd = null;
-      strengths.forEach(function (s, i) { if (s.valid && (!best || s.points > best.points)) { best = s; bestAd = g.ads[i]; } });
+      strengths.forEach(function (s, i) { if (s.valid && (!best || s.points > best.points)) { best = s; bestAd = ads[i]; } });
+      if (!best) {
+        strengths.forEach(function (s, i) { if (s.serves && (!best || s.points > best.points)) { best = Object.assign({}, s, { label: 'Poor' }); bestAd = ads[i]; } });
+        if (best) res.warnings.push('Ad group "' + g.name + '" ran with an incomplete display ad, which limited where it could show');
+      }
       var gRes = Object.assign({ id: g.id, name: g.name, campaignId: c.id, campaign: c.name, adStrength: best ? best.label : 'Incomplete' }, emptyMetrics());
       res.adGroups.push(gRes);
-      if (!best) { res.warnings.push('Ad group "' + g.name + '" has no valid responsive display ad'); return; }
+      if (!best) { res.warnings.push('Ad group "' + g.name + '" has an empty display ad, so it could not run'); return; }
       var demo = demographicFactors(g.targeting, acc.industry);
       var sg = segmentsFor(g, c, ctx, 'display');
       var lp = landingPageQuality(bestAd.finalUrl, '', ctx);
@@ -645,7 +699,7 @@
           demoCvr: demo.cvr,
           benchCpm: ind.display.cpc * ind.display.ctr * 1000 * tp.cpm * ctx.market.competition,
           ctr: ind.display.ctr * tp.ctr * (0.4 + 0.6 * s.rel) * STRENGTH_CTR[best.label],
-          cvr: ind.display.cvr * tp.cvr * (0.2 + 0.8 * s.rel) * demo.cvr * (0.55 + 0.9 * lp) * loc.cvr * sched.cvr * dev.cvr,
+          cvr: upperFunnelCvr(ind) * tp.cvr * (0.2 + 0.8 * s.rel) * demo.cvr * (0.55 + 0.9 * lp) * loc.cvr * sched.cvr * dev.cvr,
           finalUrl: bestAd.finalUrl
         });
       });
@@ -658,7 +712,7 @@
       switch (strategy) {
         case 'manual_cpc': return (Number(u.g.defaultBid) || Number(c.maxCpc) || 0.5) * u.ctr * 1000 * dev.bid;
         case 'vcpm': return (Number(c.targetCpm) || 3) * 0.7;
-        case 'target_cpa': return c.targetCpa * u.ctr * u.cvr * 1000 * learn.factor;
+        case 'target_cpa': return bid.targetCpa * u.ctr * u.cvr * 1000 * learn.factor;
         case 'max_conversions': return u.benchCpm * 1.3 * scale * (smartActive ? Math.sqrt(u.cvr / ind.display.cvr) : 1);
         default: return u.benchCpm * 1.3 * scale;
       }
@@ -677,17 +731,7 @@
       });
       return { rows: rows, cost: cost };
     }
-    var ev, scale = 1;
-    if (bs.auto) {
-      var lo = 0.3, hi = 4;
-      var evHi = evaluate(hi);
-      if (evHi.cost <= budget) { ev = evHi; scale = hi; }
-      else if (evaluate(lo).cost >= budget) { ev = evaluate(lo); scale = lo; }
-      else {
-        for (var i = 0; i < 22; i++) { var mid = (lo + hi) / 2; if (evaluate(mid).cost > budget) hi = mid; else lo = mid; }
-        ev = evaluate(lo); scale = lo;
-      }
-    } else ev = evaluate(1);
+    var ev = bs.auto ? fitBudget(evaluate, budget, 0.3, 4).ev : evaluate(1);
     var throttle = ev.cost > budget ? budget / ev.cost : 1;
     res.budgetLimited = throttle < 0.98;
 
@@ -714,8 +758,10 @@
       var cvr = u.cvr * smartBoost;
       var conv = stochRound(clicks * webShare * cvr + clicks * (1 - webShare) * cvr * 0.05, rnd);
       var cost = impr * row.cpm / 1000;
-      var vt = acc.conversionTracking ? stochRound(impr * 1.2e-5 * u.seg.rel * u.tp.cvr, rnd) : 0;
-      var value = conv * acc.value * (0.9 + 0.2 * rnd());
+      // view-through conversions: saw the ad, didn't click, converted later (50% credit in value)
+      // tied to impression cost vs. a Search conversion, so they stay modest in every industry
+      var vt = stochRound(impr * 0.35 * (u.benchCpm / 1000) / (ind.search.cpc / ind.search.cvr) * (0.2 + 0.8 * u.seg.rel) * Math.sqrt(u.tp.cvr) * STRENGTH_CTR[u.strength], rnd);
+      var value = (conv + vt * 0.5) * acc.value * (0.9 + 0.2 * rnd());
       var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv, value: value, viewThrough: vt, eligible: row.eligible };
       addMetrics(res, m);
       addMetrics(u.gRes, m);
@@ -775,71 +821,111 @@
     var loc = locationFactors(c, acc);
     if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
     var dev = deviceFactors(c, acc.industry);
+    if (!dev.volume) { res.errors.push('All devices are excluded (−100%)'); return res; }
     var sched = scheduleFactors(c, acc.industry);
-    var format = c.videoFormat || 'skippable';
+    var format = D.VIDEO_FORMATS[c.videoFormat] ? c.videoFormat : 'skippable';
     var f = D.VIDEO_FORMATS[format];
-    var strategy = c.bidStrategy;
-    var bs = D.BID_STRATEGIES[strategy];
-    if (!bs || bs.types.indexOf('video') < 0) { res.errors.push('Bid strategy is not available for Video'); return res; }
-    if (f.billing === 'cpm' && strategy === 'max_cpv') { res.errors.push(f.name + ' ads are bought on CPM — use Target CPM'); return res; }
-    if (SMART.indexOf(strategy) >= 0 && format !== 'skippable') { res.errors.push('Conversion bidding for video requires skippable in-stream ads'); return res; }
-    if (SMART.indexOf(strategy) >= 0 && !acc.conversionTracking) { res.errors.push(bs.name + ' needs conversion tracking'); return res; }
-    if (strategy === 'target_cpa' && !(c.targetCpa > 0)) { res.errors.push('Set a Target CPA'); return res; }
+    var inv = D.INVENTORY_TYPES[c.inventory] || D.INVENTORY_TYPES.standard;
     var budget = (Number(c.dailyBudget) || 0) * BUDGET_DAYS;
     if (!(budget > 0)) { res.errors.push('Daily budget is 0'); return res; }
-    var learn = learningFactor(c, ctx);
+
+    // Placements: each format only runs where YouTube allows it.
+    var names = function (ks) { return ks.map(function (k) { return D.YT_SURFACES[k].name; }).join(', '); };
+    var eligible = function (k) { return D.YT_SURFACES[k].formats.indexOf(format) >= 0; };
+    var chosen = (c.videoSurfaces || Object.keys(D.YT_SURFACES)).filter(function (k) { return D.YT_SURFACES[k]; });
+    var surfaces = chosen.filter(eligible);
+    var skipped = chosen.filter(function (k) { return !eligible(k); });
+    if (!surfaces.length) {
+      surfaces = Object.keys(D.YT_SURFACES).filter(eligible);
+      res.warnings.push('None of the selected placements accept ' + f.name + ' ads, so they ran on ' + names(surfaces));
+    } else if (skipped.length) {
+      res.notes.push(f.name + ' ads cannot run on ' + names(skipped));
+    }
+
+    // Bidding: format decides how you pay (per view or per 1,000 impressions).
+    var strategy = c.bidStrategy;
+    var fallback = f.billing === 'cpv' ? 'max_cpv' : 'target_cpm';
+    var bs = D.BID_STRATEGIES[strategy];
+    if (!bs || bs.types.indexOf('video') < 0) { strategy = fallback; res.warnings.push('That bid strategy is not available for video, so ' + D.BID_STRATEGIES[fallback].name + ' was used'); }
+    else if (SMART.indexOf(strategy) >= 0 && format !== 'skippable') { strategy = fallback; res.warnings.push('Conversion bidding needs skippable in-stream ads, so ' + D.BID_STRATEGIES[fallback].name + ' was used'); }
+    else if (SMART.indexOf(strategy) >= 0 && !acc.conversionTracking) { strategy = fallback; res.warnings.push(bs.name + ' needs conversion tracking, so ' + D.BID_STRATEGIES[fallback].name + ' was used'); }
+    else if (strategy === 'max_cpv' && f.billing === 'cpm') { strategy = 'target_cpm'; res.warnings.push(f.name + ' ads are bought per 1,000 impressions, so Target CPM was used at the market rate'); }
+    var targetCpa = Number(c.targetCpa) || 0;
+    if (strategy === 'target_cpa' && !(targetCpa > 0)) { targetCpa = Math.round(ind.display.cpc / upperFunnelCvr(ind)); res.warnings.push('No Target CPA was set, so $' + targetCpa + ' was used'); }
+    var learn = learningFactor(Object.assign({}, c, { bidStrategy: strategy }), ctx);
     res.learning = learn.status;
 
+    var fmtCpm = { bumper: 7, nonskip: 10, shorts: 5, skippable: 9, infeed: 6 }[format];
+    var fmtLift = { bumper: 1.1, nonskip: 1.2, skippable: 1.0, shorts: 0.9, infeed: 0.6 }[format];
+    var fmtConv = { bumper: 0.55, nonskip: 0.8, skippable: 1.0, shorts: 0.8, infeed: 1.1 }[format];
+    var searchCpa = ind.search.cpc / ind.search.cvr;
     var units = [];
     (c.adGroups || []).forEach(function (g) {
-      var ad = (g.ads || []).find(function (a) { return M.videoAdCheck(a, format).valid; });
       var gRes = Object.assign({ id: g.id, name: g.name, campaignId: c.id, campaign: c.name }, emptyMetrics());
       res.adGroups.push(gRes);
-      if (!ad) {
-        var chk = M.videoAdCheck((g.ads || [])[0] || {}, format);
-        res.warnings.push('Ad group "' + g.name + '": ' + (chk.errors[0] || 'no eligible video ad'));
-        return;
-      }
+      var checks = (g.ads || []).map(function (a) { return M.videoAdCheck(a, format, surfaces); });
+      var bi = -1;
+      checks.forEach(function (ch, i) { if (ch.valid && (bi < 0 || ch.points > checks[bi].points)) bi = i; });
+      if (bi < 0) { res.warnings.push('Ad group "' + g.name + '": ' + ((checks[0] && checks[0].errors[0]) || 'no video ad')); return; }
+      var ad = Object.assign({}, g.ads[bi], { finalUrl: g.ads[bi].finalUrl || acc.website });
+      var creative = checks[bi].creative.score;
+      gRes.adStrength = checks[bi].label;
       var demo = demographicFactors(g.targeting, acc.industry);
       var sg = segmentsFor(g, c, ctx, 'video');
       var len = Number(ad.length) || 30;
       var lenMult = len <= 15 ? 1.35 : len <= 30 ? 1.15 : len <= 60 ? 1.0 : len <= 180 ? 0.8 : 0.6;
+      var vertical = ad.aspect === '9:16';
       var lp = landingPageQuality(ad.finalUrl, '', ctx);
+      var cq = 0.55 + 0.9 * creative; // creative multiplier, ~0.55 (no ABCD) to ~1.45 (all of ABCD)
       sg.segs.forEach(function (s) {
         var tp = D.AUDIENCE_TYPES[s.type];
-        var vr;
-        if (format === 'skippable') vr = ind.video.viewRate * lenMult * (ad.hook ? 1.2 : 0.8) * (ad.captions ? 1.03 : 1) * (0.55 + 0.45 * s.rel);
-        else if (format === 'infeed') vr = 0.035 * (ad.headline ? 1.2 : 0.8) * (0.5 + 0.5 * s.rel);
-        else if (format === 'shorts') vr = 0.5 * (ad.aspect === '9:16' ? 1 : 0.55) * (ad.hook ? 1.15 : 0.85);
-        else vr = 1; // bumper & non-skippable: every impression is a completed view
-        vr = U.clamp(vr, 0.005, 1);
-        var ctr = (format === 'bumper' ? 0.002 : format === 'nonskip' ? 0.004 : format === 'shorts' ? 0.003 : format === 'infeed' ? 0.001 : 0.006) *
-          (ad.cta ? 1.3 : 0.7) * (ad.headline ? 1.1 : 0.9) * (ad.companion ? 1.1 : 1) * (0.5 + 0.5 * s.rel) * Math.sqrt(tp.ctr);
-        if (format === 'infeed') ctr = vr * 0.04;
-        units.push({
-          g: g, gRes: gRes, seg: s, tp: tp, ad: ad, vr: vr, ctr: ctr, lp: lp,
-          reach: s.size * 0.6 * loc.weight * demo.reach * sched.volume * dev.volume * ctx.market.demand,
-          benchCpv: ind.video.cpv * Math.sqrt(tp.cpm) * ctx.market.competition,
-          benchCpm: ({ bumper: 7, nonskip: 10, shorts: 5, skippable: 9, infeed: 6 })[format] * Math.sqrt(tp.cpm) * ctx.market.competition * (ind.video.cpv / 0.03),
-          cvr: ind.display.cvr * 2.2 * tp.cvr * (0.2 + 0.8 * s.rel) * demo.cvr * (0.55 + 0.9 * lp) * loc.cvr * dev.cvr,
-          finalUrl: ad.finalUrl
+        var rel = s.rel * inv.quality;
+        surfaces.forEach(function (k) {
+          var sf = D.YT_SURFACES[k];
+          // how well the creative fits the screen it lands on
+          var fit = k === 'shorts' ? (vertical ? 1.15 : 0.55) : vertical && (k === 'instream' || k === 'ctv') ? 0.8 : 1;
+          if (k === 'ctv') fit *= ad.brandAudio ? 1.1 : 0.85;
+          var vr;
+          if (format === 'skippable') vr = ind.video.viewRate * lenMult * cq * (0.55 + 0.45 * rel) * sf.view * fit;
+          else if (format === 'infeed') vr = 0.04 * (ad.headline ? 1.15 : 0.8) * (ad.thumbnail ? 1.15 : 1) * cq * (0.5 + 0.5 * rel) * sf.view;
+          else if (format === 'shorts') vr = 0.5 * cq * fit;
+          else vr = k === 'partners' ? 0.85 : 0.97; // non-skippable & bumper: most impressions complete
+          vr = U.clamp(vr, 0.005, 1);
+          var baseCtr = { bumper: 0.002, nonskip: 0.004, shorts: 0.003, skippable: 0.006, infeed: 0.0015 }[format];
+          var ctr = baseCtr * (ad.cta ? 1.25 : 0.7) * Math.sqrt(cq) * (ad.companion && k === 'instream' ? 1.1 : 1) * (0.5 + 0.5 * rel) * Math.sqrt(tp.ctr) * sf.ctr * Math.min(fit, 1);
+          if (format === 'infeed') ctr = vr * 0.05 * sf.ctr;
+          var benchCpv = ind.video.cpv * Math.sqrt(tp.cpm) * ctx.market.competition * sf.cost * inv.cost;
+          var benchCpm = fmtCpm * Math.sqrt(tp.cpm) * ctx.market.competition * (ind.video.cpv / 0.03) * sf.cost * inv.cost;
+          var cvrBase = upperFunnelCvr(ind) * 2.2 * tp.cvr * (0.2 + 0.8 * rel) * demo.cvr * (0.55 + 0.9 * lp) * loc.cvr * dev.cvr * sf.cvr;
+          units.push({
+            g: g, gRes: gRes, seg: s, tp: tp, ad: ad, k: k, sf: sf, vr: vr, ctr: ctr, lp: lp, rel: rel,
+            reach: s.size * 0.6 * sf.share * inv.reach * loc.weight * demo.reach * sched.volume * dev.volume * ctx.market.demand,
+            benchCpv: benchCpv,
+            benchCpm: benchCpm,
+            cvr: cvrBase * Math.sqrt(cq),
+            // Engaged-view conversions (watched 10s+ or the whole ad, then converted within days), per impression.
+            // Tied to what the impression costs relative to a Search conversion, so a well-made, well-targeted
+            // video earns its keep in any industry, a little below Search; awareness formats convert less.
+            evcImpr: 1.8 * fmtConv * (f.billing === 'cpv' ? benchCpv * vr : benchCpm / 1000) / searchCpa *
+              (0.2 + 0.8 * rel) * Math.sqrt(tp.cvr) * sf.cvr * cq,
+            lift: fmtLift * sf.recall * (ad.brandEarly ? 1.3 : 0.75) * (ad.hook ? 1.15 : 0.85) * (ad.brandAudio ? 1.1 : 1) * (0.6 + 0.4 * rel) * Math.min(fit, 1.05),
+            finalUrl: ad.finalUrl
+          });
         });
       });
     });
     if (!units.length) { res.errors.push('No ad groups with an eligible video ad'); return res; }
 
+    var cpvBilling = f.billing === 'cpv' && strategy === 'max_cpv';
     function perImpressionCost(u, scale) {
-      // returns [bid, paid cost per impression, win rate]
-      var cpvBilling = f.billing === 'cpv' && strategy === 'max_cpv';
       var bid, bench;
-      if (cpvBilling) { bid = Number(c.maxCpv) || 0.05; bench = u.benchCpv; }
-      else if (strategy === 'target_cpm') { bid = Number(c.targetCpm) || 8; bench = u.benchCpm; }
-      else if (strategy === 'target_cpa') { bid = c.targetCpa * u.ctr * u.cvr * 1000 * learn.factor + 2; bench = u.benchCpm; }
+      if (cpvBilling) { bid = Number(c.maxCpv) || u.benchCpv * 1.2; bench = u.benchCpv; }
+      else if (strategy === 'target_cpm') { bid = Number(c.targetCpm) || u.benchCpm; bench = u.benchCpm; }
+      else if (strategy === 'target_cpa') { bid = targetCpa * (u.ctr * u.cvr + u.evcImpr) * 1000 * learn.factor; bench = u.benchCpm; }
       else { bid = u.benchCpm * 1.3 * scale; bench = u.benchCpm; }
       var win = 0.9 * U.sigmoid(2.2 * (Math.log(Math.max(bid / bench, 1e-6)) + 0.2));
       var paid = Math.min(bid, bench * (0.6 + 0.35 * win));
-      var cpi = cpvBilling ? paid * u.vr : paid / 1000;
-      return { win: win, cpi: cpi, paid: paid, cpv: cpvBilling };
+      return { win: win, cpi: cpvBilling ? paid * u.vr : paid / 1000 };
     }
     function evaluate(scale) {
       var rows = [], cost = 0;
@@ -851,18 +937,13 @@
       });
       return { rows: rows, cost: cost };
     }
-    var ev;
-    if (strategy === 'max_conversions') {
-      var lo = 0.05, hi = 4;
-      var eh = evaluate(hi);
-      if (eh.cost <= budget) ev = eh;
-      else { for (var i = 0; i < 22; i++) { var mid = (lo + hi) / 2; if (evaluate(mid).cost > budget) hi = mid; else lo = mid; } ev = evaluate(lo); }
-    } else ev = evaluate(1);
+    var ev = strategy === 'max_conversions' ? fitBudget(evaluate, budget, 0.05, 4).ev : evaluate(1);
     var throttle = ev.cost > budget ? budget / ev.cost : 1;
     res.budgetLimited = throttle < 0.98;
     var rnd = ctx.rnd;
     var capMonthly = c.freqCap > 0 ? c.freqCap * DAYS : Infinity;
     var totalReach = 0, liftW = 0, earned = 0;
+    var smartBoost = SMART.indexOf(strategy) >= 0 ? learn.factor : 1;
     ev.rows.forEach(function (row) {
       var u = row.u;
       var people = Math.max(u.reach / 5, 1);
@@ -874,34 +955,59 @@
       var views = Math.round(impr * u.vr);
       var clicks = stochRound(impr * u.ctr, rnd);
       var cost = impr * row.p.cpi;
-      var conv = stochRound(clicks * u.cvr, rnd);
-      var vt = acc.conversionTracking ? stochRound(views * 3e-4 * u.seg.rel * u.tp.cvr, rnd) : 0;
-      var value = (conv + vt * 0.5) * acc.value * (0.9 + 0.2 * rnd());
-      var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv, value: value, views: views, viewThrough: vt, eligible: row.eligible };
+      var conv = stochRound(clicks * u.cvr * smartBoost, rnd);
+      var evc = stochRound(impr * u.evcImpr * smartBoost, rnd);
+      var value = (conv + evc) * acc.value * (0.9 + 0.2 * rnd());
+      var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv + evc, value: value, views: views, viewThrough: evc, eligible: row.eligible };
       addMetrics(res, m);
       addMetrics(u.gRes, m);
       totalReach += users;
-      var fmtLift = ({ bumper: 1.1, nonskip: 1.2, skippable: 1.0, shorts: 0.9, infeed: 0.6 })[format];
-      var lift = U.clamp(fmtLift * (u.ad.hook ? 1.2 : 0.85) * (u.ad.brandEarly ? 1.3 : 0.7) * 12 * (1 - Math.exp(-freq / 3)) * (0.6 + 0.4 * u.seg.rel), 0, 25);
+      var lift = U.clamp(u.lift * 12 * (1 - Math.exp(-freq / 3)), 0, 25);
       liftW += lift * users;
       earned += views * 0.1 * (u.ad.hook ? 1.2 : 0.8);
       res.quality += clicks * (0.3 + 0.6 * u.seg.rel);
       res.lpW += clicks * u.lp;
       res.landing[u.finalUrl] = (res.landing[u.finalUrl] || 0) + clicks;
       ctx.audiences.push(Object.assign(emptyMetrics(), m, {
-        campaignId: c.id, campaign: c.name, adGroup: u.g.name, segment: u.seg.name, type: u.tp.label, relevance: u.seg.rel, frequency: freq
+        campaignId: c.id, campaign: c.name, adGroup: u.g.name, segment: u.seg.name + ' · ' + u.sf.short, type: u.tp.label, relevance: u.seg.rel, frequency: freq
       }));
+      var sk = c.id + '|' + u.k;
+      var srow = ctx.videoSurfaces.get(sk);
+      if (!srow) {
+        srow = Object.assign(emptyMetrics(), { campaignId: c.id, campaign: c.name, surface: u.k, name: u.sf.name, reach: 0, liftW: 0 });
+        ctx.videoSurfaces.set(sk, srow);
+      }
+      addMetrics(srow, m);
+      srow.reach += users;
+      srow.liftW += lift * users;
+      videoPlacements(ctx, c, u, m);
     });
+    ctx.videoSurfaces.forEach(function (s) { if (s.campaignId === c.id) { s.adRecallLift = U.safeDiv(s.liftW, s.reach); s.frequency = U.safeDiv(s.impressions, s.reach); } });
     res.reach = Math.round(totalReach);
     res.frequency = U.safeDiv(res.impressions, totalReach);
     res.adRecallLift = U.safeDiv(liftW, totalReach);
     res.earnedViews = Math.round(earned);
     res.impressionShare = U.safeDiv(res.impressions, res.eligible);
     res.format = format;
+    res.surfaces = surfaces;
     res.adGroups.forEach(derive);
     res.deviceSplit = dev.split;
     res.budget = budget;
     return res;
+  }
+
+  // Where-ads-showed rows for video: sample channels on YouTube, plus the other surfaces.
+  function videoPlacements(ctx, c, u, m) {
+    var topic = M.contentTopic(ctx.state);
+    var T = topic.charAt(0).toUpperCase() + topic.slice(1);
+    var list;
+    if (u.k === 'instream') list = [['YouTube channel: ' + T + ' Lab', 0.45], ['YouTube channel: Daily ' + T, 0.35], ['YouTube channel: Trending music videos', 0.2]];
+    else if (u.k === 'ctv') list = [['TV screens: ' + T + ' Lab (YouTube on TV)', 0.6], ['TV screens: Late-night show clips', 0.4]];
+    else if (u.k === 'partners') list = [['Video partner: newsclips.example', 0.5], ['Video partner app: Word Puzzle Daily', 0.5]];
+    else list = [[u.sf.name, 1]];
+    list.forEach(function (p) {
+      pushPlacement(ctx, c, p[0], 'video', m.impressions * p[1], m.clicks * p[1], m.cost * p[1], m.conversions * p[1], m.value * p[1]);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -927,10 +1033,9 @@
     if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
     var sched = scheduleFactors(c, acc.industry);
     var dev = deviceFactors(c, acc.industry);
-    var strategy = c.bidStrategy;
+    var bid = resolveStrategy(c, 'shopping', res, acc, ind.shopping);
+    var strategy = bid.strategy;
     var bs = D.BID_STRATEGIES[strategy];
-    if (!bs || bs.types.indexOf('shopping') < 0) { res.errors.push('Bid strategy is not available for Shopping'); return res; }
-    if (strategy === 'target_roas' && (!acc.conversionTracking || !(c.targetRoas > 0))) { res.errors.push('Target ROAS needs conversion tracking and a target'); return res; }
     var budget = (Number(c.dailyBudget) || 0) * BUDGET_DAYS;
     if (!(budget > 0)) { res.errors.push('Daily budget is 0'); return res; }
     var learn = learningFactor(c, ctx);
@@ -958,9 +1063,11 @@
         var tRel = t.kind === 'related' ? M.relevance(t.term, ctx.vocab) * 0.7 : M.relevance(t.term, ctx.vocab);
         return { term: t.term, kind: t.kind, share: t.share, blocked: blocked, intent: tIntent === 'brand' ? 'high' : tIntent, rel: Math.max(tRel, t.kind === 'low' ? tRel : 0.5) };
       });
-      var vol = (2000 + U.unit('shop:' + core + p.id) * 18000) * ind.volume * ctx.market.demand * loc.weight * sched.volume * dev.volume * (0.35 + 0.65 * fq.score);
+      // shoppers often buy more than one item: order value is at least near the account's average order
+      var orderValue = Math.max(price * 1.15, (acc.value || 0) * 0.85);
+      var vol = (6000 + U.unit('shop:' + core + p.id) * 30000) * ind.volume * ctx.market.demand * loc.weight * sched.volume * dev.volume * (0.35 + 0.65 * fq.score);
       units.push({
-        p: p, row: row, fq: fq, pg: pg, price: price, priceRatio: priceRatio, terms: terms, vol: vol,
+        p: p, row: row, fq: fq, pg: pg, price: price, orderValue: orderValue, priceRatio: priceRatio, terms: terms, vol: vol,
         q: 2 + 8 * fq.score, gtin: /^\d{8}$|^\d{12,14}$/.test(String(p.gtin || '').trim()),
         sale: p.salePrice > 0 && p.salePrice < p.price,
         benchCpc: ind.shopping.cpc * loc.cpc * comp,
@@ -972,7 +1079,7 @@
 
     function bidFor(u, scale) {
       if (strategy === 'manual_cpc') return (Number(u.pg.bid) || 0.5) * dev.bid;
-      if (strategy === 'target_roas') return u.predCvr * u.price * 1.15 / (c.targetRoas / 100) * learn.factor;
+      if (strategy === 'target_roas') return u.predCvr * u.orderValue / (bid.targetRoas / 100) * learn.factor;
       var b = u.benchCpc * 1.4 * scale;
       return b;
     }
@@ -993,7 +1100,8 @@
             (u.sale ? 1.2 : 1) * (0.6 + 0.6 * u.fq.score);
           var clicks = impr * U.clamp(ctr, 0.0005, 0.2);
           var cpc = Math.min(bid, compRank * U.clamp(0.35 + 0.4 * Math.log(1 + r), 0.3, 1.05) / u.q + 0.01);
-          var cvr = ind.shopping.cvr * INTENT[t.intent].cvr * (0.08 + 0.92 * Math.pow(t.rel, 1.3)) * U.clamp(Math.pow(1 / u.priceRatio, 1.5), 0.4, 1.6) *
+          // shoppers already saw price and image before clicking, so clicks are pre-qualified
+          var cvr = ind.shopping.cvr * 1.4 * INTENT[t.intent].cvr * (0.08 + 0.92 * Math.pow(t.rel, 1.3)) * U.clamp(Math.pow(1 / u.priceRatio, 1.5), 0.4, 1.6) *
             (0.55 + 0.9 * u.lp) * loc.cvr * sched.cvr * dev.cvr * (strategy === 'target_roas' ? learn.factor : 1);
           cost += clicks * cpc;
           rows.push({ u: u, t: t, vol: vol, impr: impr, isRank: isRank, clicks: clicks, cpc: cpc, cvr: U.clamp(cvr, 0, 0.5) });
@@ -1001,13 +1109,7 @@
       });
       return { rows: rows, cost: cost };
     }
-    var ev;
-    if (bs.auto) {
-      var lo = 0.1, hi = 3;
-      var eh = evaluate(hi);
-      if (eh.cost <= budget) ev = eh;
-      else { for (var i = 0; i < 22; i++) { var mid = (lo + hi) / 2; if (evaluate(mid).cost > budget) hi = mid; else lo = mid; } ev = evaluate(lo); }
-    } else ev = evaluate(1);
+    var ev = bs.auto ? fitBudget(evaluate, budget, 0.1, 3).ev : evaluate(1);
     var throttle = ev.cost > budget ? budget / ev.cost : 1;
     res.budgetLimited = throttle < 0.98;
     var rnd = ctx.rnd;
@@ -1018,7 +1120,7 @@
       var clicks = Math.min(impr, stochRound(row.clicks * throttle * noise, rnd));
       var cost = clicks * row.cpc;
       var conv = stochRound(clicks * row.cvr, rnd);
-      var value = conv * u.price * (1.05 + 0.2 * rnd());
+      var value = conv * u.orderValue * (0.9 + 0.2 * rnd());
       var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv, value: value, eligible: row.vol };
       addMetrics(u.row, m);
       addMetrics(res, m);
@@ -1078,7 +1180,7 @@
       brandLift: prev ? prev.brandLiftIndex || 0 : 0,
       remarketingUsers: prev && prev.analytics ? prev.analytics.users * 0.85 : 0,
       hasKeywords: state.campaigns.some(function (c) { return c.type === 'search' && (c.adGroups || []).some(function (g) { return M.adGroupKeywords(g).length; }); }) || !!(state.scan && (state.scan.keywords || []).length),
-      seenKeywords: new Set(), searchTerms: new Map(), keywords: [], audiences: [], placements: [], placementMap: new Map(), products: []
+      seenKeywords: new Set(), searchTerms: new Map(), videoSurfaces: new Map(), keywords: [], audiences: [], placements: [], placementMap: new Map(), products: []
     };
   }
 
@@ -1242,6 +1344,7 @@
       audiences: ctx.audiences,
       placements: ctx.placements.filter(function (p) { return p.impressions > 0; }).sort(function (a, b) { return b.cost - a.cost; }),
       products: ctx.products,
+      videoSurfaces: Array.from(ctx.videoSurfaces.values()).map(function (v) { return derive(v); }),
       devices: devRows,
       daily: dailySeries(totals, ctx),
       analytics: ga,

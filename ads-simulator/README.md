@@ -22,14 +22,14 @@ Each student's work saves automatically in their own browser. **Settings → Exp
 2. **Campaigns**: Students choose an objective and a campaign type, then fill in:
    - **Search**: ad groups and keywords using broad, `"phrase"` and `[exact]` notation, with Keyword Planner estimates. Also negatives, responsive search ads (15 headlines and 4 descriptions, with live ad strength and policy checks), sitelinks, callouts, structured snippets and a call asset.
    - **Display**: in-market, affinity, life-event, custom and remarketing audiences, plus topics, placements, demographics and optimized targeting. Students upload their own images (or drag them in); each is cropped to the required shape (landscape 1.91:1, square 1:1, logo) and saved with the project. Responsive display ads preview in 7 formats.
-   - **Video**: skippable, non-skippable, bumper, in-feed or Shorts format; the creative checklist (hook, early branding, captions, CTA, companion banner); CPV or CPM bidding.
+   - **YouTube (Video)**: skippable, non-skippable, bumper, in-feed or Shorts format; **placements** (YouTube videos, Home & Watch Next feeds, YouTube search, Shorts, TV screens, Google video partners) and an inventory type for brand safety; the **ABCD creative checklist** (Attract, Brand, Connect, Direct); thumbnails (16:9 and 9:16); CPV or CPM bidding.
    - **Shopping**: a product feed with feed-quality scoring and product groups.
    - **All types**: budget, bid strategy (Manual CPC, Maximize clicks/conversions/value, Target CPA/ROAS/impression share, vCPM, CPV, CPM), locations with Presence vs. interest, language, ad schedule, device bid adjustments, and network settings.
-3. **Ad previews**: Shows each ad as a search result (desktop and mobile), as responsive display ads in several sizes, as YouTube players, Shorts and in-feed ads, and as Shopping cards. A **Show another combination** button demonstrates how the dynamic creative mixes assets.
+3. **Ad previews & stimuli**: Shows each ad in context: search results (desktop and mobile), responsive display ads in several sizes and on a news article, YouTube watch pages (desktop and mobile), feeds, search results, Shorts, TV screens and a video partner site, and Shopping cards. Students can load a video file to play inside the YouTube mock-ups (session only). **Stimulus view** opens any ad in one full-size context and downloads it as a PNG, useful for class critiques or as experiment stimuli. The mock-ups use neutral branding.
 4. **Run simulation**: Runs one round, which simulates 30 days of auctions.
 5. **Reports**: Tabs for campaigns, ad groups, keywords (Quality Score and its three components), search terms (with one-click **Negative** and **Keyword** buttons), audiences and placements, products, devices, GA4-style website analytics, and daily charts. Every table can be exported to CSV.
 6. **Score & feedback**: Shows the overall grade, the setup score by area, the performance breakdown, estimated revenue and profit, and a prioritized list of recommendations. Each recommendation links to the guideline behind it.
-7. **PDF results overview**: **Download PDF** (on Overview, Score & feedback and Settings) saves a 3-page report of the round: scores, key results with change vs. the previous round, a daily clicks chart, campaign results, the score breakdown, top recommendations, website analytics and round history. It uses jsPDF from cdnjs, so it needs an internet connection.
+7. **PDF results overview**: **Download PDF** (on Overview, Score & feedback and Settings) saves a 3-page report of the round: scores, key results with change vs. the previous round, a daily clicks chart, campaign results, the score breakdown, top recommendations, website analytics and round history. It uses jsPDF from cdnjs (PNG stimuli use html2canvas), so these need an internet connection.
 
 ## How the simulation works (short version)
 
@@ -41,9 +41,10 @@ Each student's work saves automatically in their own browser. **Settings → Exp
 | Search terms | exact match shows the keyword; phrase adds modifiers; broad adds related, competitor and junk terms. Negatives block them. Smart Bidding filters some junk |
 | Budget | manual and target strategies are throttled (lost IS from budget); Maximize strategies lower bids to fit the budget |
 | Conversion rate | industry CVR × search intent × relevance to the business × landing page × location/device/schedule fit × Smart Bidding learning |
-| Display/Video | reach from audience size × demographics × location; win rate from bid vs. market CPM; frequency fatigue; accidental app clicks; view rate from length, hook and relevance; ad recall lift |
+| Display/Video | reach from audience size × demographics × location; win rate from bid vs. market CPM (with price floors); frequency fatigue; accidental app clicks. YouTube adds placement effects (cost, view rate, clicks, conversions and recall differ by placement), the ABCD creative score, and engaged-view conversions; Shorts favors vertical video and TV screens favor the brand being said aloud |
 | Shopping | visibility from feed quality (title, GTIN, image, description) and bids; CTR/CVR from price vs. market and sale price |
 | Across rounds | remarketing lists fill from past visitors (tag required); video/display raises brand searches; Smart Bidding learns after a strategy change and matures with conversions |
+| Calibration | each industry's default value per conversion is set so an average Search advertiser roughly breaks even after margin. Sensible setups therefore earn a profit, and empty or nonsensical ones lose money (see `tests/calibration.test.js`). Incomplete ads and misconfigured bidding still run, with a penalty and a clear warning, instead of producing an empty report |
 
 Each round seeds its randomness from the project seed and the round number. The same setup in the same round therefore always gives the same results, which keeps grading fair. Instructors can give every student the same seed in **Settings**.
 
@@ -61,7 +62,9 @@ ads-simulator/
   js/model.js     state, campaign defaults, quick start, ad strength, policy checks, feed quality
   js/engine.js    the auction and traffic simulation
   js/scoring.js   setup checklist, performance score, feedback
-  js/previews.js  ad preview renderers
+  js/previews.js  Search/Display/Shopping preview renderers
+  js/youtube.js   YouTube mock-ups in context (watch pages, feeds, search, Shorts, TV, partners)
+  js/report-pdf.js  PDF results overview
   js/app.js       UI
   server.py       small static file server (stdlib)
   tests/          node --test ads-simulator/tests/*.test.js

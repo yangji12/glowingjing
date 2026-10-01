@@ -2,12 +2,12 @@
 (function () {
   'use strict';
   var A = window.AdSim;
-  var U = A.util, D = A.data, M = A.model, E = A.engine, SC = A.scoring, P = A.previews;
+  var U = A.util, D = A.data, M = A.model, E = A.engine, SC = A.scoring, P = A.previews, YT = A.youtube;
   var esc = P.esc;
   var KEY = 'adsim.state.v1';
 
   var S = load();
-  var UI = { route: 'overview', params: [], combo: 0, device: 'desktop', round: null, reportTab: 'campaigns', newCamp: null, sort: {}, scan: { status: '' }, csv: '', stFilter: 'all' };
+  var UI = { route: 'overview', params: [], combo: 0, device: 'desktop', round: null, reportTab: 'campaigns', newCamp: null, sort: {}, scan: { status: '' }, csv: '', stFilter: 'all', videoFiles: {}, stim: null };
   var LIVE = {};
   var TABLES = {};
   var CHARTS = {};
@@ -569,7 +569,17 @@
       h += '<div class="card"><h3>Placements & frequency ' + guideLink('DSP-3') + '</h3>' + checkbox(base + '.excludeApps', 'Exclude mobile app placements (games, utilities)', 'Prevents accidental clicks from mobile games.') +
         field('Frequency cap (impressions per user per day, 0 = none)', input(base + '.freqCap', { type: 'number', step: 1, min: 0 })) + '</div>';
     }
-    if (c.type === 'video') h += '<div class="card"><h3>Frequency</h3>' + field('Frequency cap (impressions per user per day, 0 = none)', input(base + '.freqCap', { type: 'number', step: 1, min: 0 })) + '</div>';
+    if (c.type === 'video') {
+      var fmt = c.videoFormat || 'skippable';
+      h += '<div class="card"><h3>Where your video ads show ' + guideLink('VID-6') + '</h3><p class="help">Each placement reaches people in a different moment. Your format (' + esc(D.VIDEO_FORMATS[fmt].name) + ') can only run where it is marked as available.</p>' +
+        Object.keys(D.YT_SURFACES).map(function (k) {
+          var sf = D.YT_SURFACES[k];
+          var ok = sf.formats.indexOf(fmt) >= 0;
+          return arrayCheck(base + '.videoSurfaces', k, '<b>' + esc(sf.name) + '</b>', ' ' + (ok ? '<span class="chip good">Available</span>' : '<span class="chip neutral">Not for this format</span>') + '<small>' + esc(sf.desc) + '</small>');
+        }).join('') +
+        '<p class="lbl">Inventory type (brand safety)</p>' + Object.keys(D.INVENTORY_TYPES).map(function (k) { var it = D.INVENTORY_TYPES[k]; return radio(base + '.inventory', k, esc(it.name), esc(it.desc)); }).join('') +
+        field('Frequency cap (impressions per user per day, 0 = none)', input(base + '.freqCap', { type: 'number', step: 1, min: 0 })) + '</div>';
+    }
     h += '<div class="card"><h3>Locations & language ' + guideLink('TGT-1') + '</h3><p class="help">Your business serves: <b>' + esc(S.account.serviceArea) + '</b>.</p><div class="check-grid">' + locs + '</div>' +
       '<p class="lbl">Location option</p>' + radio(base + '.locationOption', 'presence', 'Presence: people in or regularly in your targeted locations', 'Recommended for local businesses.') +
       radio(base + '.locationOption', 'presenceOrInterest', 'Presence or interest: people in, regularly in, or who\'ve shown interest in your locations', 'Google\'s default. Reaches more people, including some outside your area.') +
@@ -690,7 +700,9 @@
     landscape: { w: 1200, h: 628, label: 'Landscape 1.91:1 (1200×628)' },
     square: { w: 600, h: 600, label: 'Square 1:1 (600×600)' },
     logo: { w: 256, h: 256, label: 'Logo 1:1 (256×256)', png: true },
-    product: { w: 600, h: 600, label: 'Product image 1:1 (600×600)' }
+    product: { w: 600, h: 600, label: 'Product image 1:1 (600×600)' },
+    thumb: { w: 1280, h: 720, label: 'Video thumbnail 16:9 (1280×720)' },
+    vthumb: { w: 720, h: 1280, label: 'Vertical thumbnail 9:16 (720×1280)' }
   };
 
   function imageField(path, kind) {
@@ -767,24 +779,52 @@
     return h;
   }
 
+  function abcdPanel(ad, format) {
+    var cr = M.videoCreative(ad);
+    return '<div class="abcd-score">' + cr.parts.map(function (p) {
+      return barRow('<b>' + p.key + '</b> ' + esc(p.name), p.have, p.total, p.have + '/' + p.total, p.have === p.total ? 'good' : p.have ? 'warning' : 'critical');
+    }).join('') + '<p class="muted">Creative score ' + Math.round(cr.score * 100) + '/100: drives view rate, clicks, conversions and ad recall in the simulation.</p></div>';
+  }
+
+  function videoContexts(c, ad, path) {
+    var format = c.videoFormat || 'skippable';
+    var ids = YT.contextsFor(format, c.videoSurfaces);
+    if (!ids.length) return '<p class="muted">No placement selected that shows this format. Choose placements in Settings.</p>';
+    return '<div class="ytm-gallery">' + ids.map(function (id) { return YT.thumbnail(id, ad, S.account, format, S, { videoSrc: UI.videoFiles[path] }, 520); }).join('') + '</div>';
+  }
+
   function videoAds(c, base) {
     var format = c.videoFormat || 'skippable';
-    var h = '<div class="card info-card">Format: <b>' + esc(D.VIDEO_FORMATS[format].name) + '</b> — ' + esc(D.VIDEO_FORMATS[format].desc) + ' Change the format in Settings. ' + guideLink('VID-2') + '</div>';
+    var surfaces = c.videoSurfaces || [];
+    var onShorts = format === 'shorts' || surfaces.indexOf('shorts') >= 0;
+    var h = '<div class="card info-card">Format: <b>' + esc(D.VIDEO_FORMATS[format].name) + '</b>. ' + esc(D.VIDEO_FORMATS[format].desc) + ' Change the format and placements in Settings. ' + guideLink('VID-2') + ' ' + guideLink('VID-5') + '</div>';
     (c.adGroups || []).forEach(function (g, gi) {
       (g.ads || []).forEach(function (ad, ai) {
         var ab = base + '.adGroups.' + gi + '.ads.' + ai;
-        h += '<div class="card"><div class="card-head"><h3>' + esc(g.name) + ' · Video ad ' + (ai + 1) + '</h3>' + (g.ads.length > 1 ? btn('Remove ad', 'removeAd', [c.id, g.id, ai], 'small ghost danger') : '') + '</div><div class="ad-editor"><div>' +
-          field('YouTube video URL', input(ab + '.videoUrl', { placeholder: 'https://www.youtube.com/watch?v=…' }), 'Optional — used for the thumbnail. Describe the video with the fields below.') +
-          '<div class="grid2">' + field('Video length (seconds)', input(ab + '.length', { type: 'number', min: 1, step: 1 })) + field('Aspect ratio', select(ab + '.aspect', [['16:9', '16:9 horizontal'], ['9:16', '9:16 vertical'], ['1:1', '1:1 square']])) + '</div>' +
-          '<p class="lbl">Creative checklist ' + guideLink('VID-1') + '</p>' + checkbox(ab + '.hook', 'Strong hook in the first 5 seconds', 'Opens with the problem, benefit or something surprising.') +
-          checkbox(ab + '.brandEarly', 'Brand/logo shown in the first 5 seconds') + checkbox(ab + '.captions', 'Captions / text on screen', 'Many people watch muted.') +
-          checkbox(ab + '.companion', 'Companion banner (desktop)') +
-          field('Headline / CTA headline', input(ab + '.headline', { max: 30, policy: 'headline' })) + field('Long headline', input(ab + '.longHeadline', { max: 90 })) +
-          field('Description (in-feed)', input(ab + '.description', { max: 90 })) +
-          '<div class="grid2">' + field('Call-to-action button', input(ab + '.cta', { max: 10 })) + field('Final URL', input(ab + '.finalUrl', { inputType: 'url' })) + '</div>' +
-          '</div><div class="ad-side">' + live('str-' + g.id + '-' + ai, function () { var v = M.videoAdCheck(ad, format); return strengthMeter({ label: v.label === 'Not eligible' ? 'Incomplete' : v.label, issues: v.issues, errors: v.errors }); }) +
-          '<p class="lbl">Preview</p>' + live('prev-' + g.id + '-' + ai, function () { return P.videoGallery(ad, format, S.account); }) + '</div></div></div>';
+        var abcd = D.ABCD.map(function (L) {
+          return '<div class="abcd"><div class="abcd-head"><span class="abcd-letter">' + L.key + '</span> ' + esc(L.name) + '</div>' +
+            L.items.filter(function (it) { return it[0] !== 'cta' && it[0] !== 'headline'; }).map(function (it) { return checkbox(ab + '.' + it[0], esc(it[1]), esc(it[2])); }).join('') +
+            (L.key === 'D' ? '<div class="grid2">' + field('CTA button text', input(ab + '.cta', { max: 10 })) + field('Headline', input(ab + '.headline', { max: 30, policy: 'headline' })) + '</div>' : '') + '</div>';
+        }).join('');
+        h += '<div class="card"><div class="card-head"><h3>' + esc(g.name) + ' · Video ad ' + (ai + 1) + '</h3>' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + (g.ads.length > 1 ? btn('Remove ad', 'removeAd', [c.id, g.id, ai], 'small ghost danger') : '') + '</div><div class="ad-editor"><div>' +
+          '<p class="lbl">Your video</p>' +
+          '<div class="row wrap"><label class="btn small">🎬 Preview a video file<input type="file" accept="video/*" data-video-file="' + esc(ab) + '" hidden></label>' +
+          (UI.videoFiles[ab] ? '<span class="good-text">✓ Playing in the previews (this browser session only)</span>' + btn('Remove', 'clearVideoFile', ab, 'small ghost danger') : '<span class="muted">Plays inside the mock-ups; not saved or uploaded.</span>') + '</div>' +
+          field('YouTube video link (optional)', input(ab + '.videoUrl', { placeholder: 'https://www.youtube.com/watch?v=…' }), 'In Google Ads your video must be on YouTube. Here the link is for your records.') +
+          '<div class="grid2">' + field('Video length (seconds)', input(ab + '.length', { type: 'number', min: 1, step: 1 })) + field('Aspect ratio', select(ab + '.aspect', [['16:9', '16:9 horizontal'], ['9:16', '9:16 vertical (Shorts)'], ['1:1', '1:1 square']])) + '</div>' +
+          imageField(ab + '.thumbnail', 'thumb') + (onShorts || ad.aspect === '9:16' ? imageField(ab + '.verticalThumb', 'vthumb') : '') +
+          '<p class="lbl">Creative checklist: ABCD ' + guideLink('VID-5') + '</p>' + abcd +
+          field('Long headline (companion banner, feeds)', input(ab + '.longHeadline', { max: 90 })) +
+          field('Description (in-feed ads)', input(ab + '.description', { max: 90 })) +
+          field('Final URL', input(ab + '.finalUrl', { inputType: 'url' })) +
+          checkbox(ab + '.companion', 'Companion banner next to the player (desktop)') +
+          '</div><div class="ad-side">' + live('str-' + g.id + '-' + ai, function () {
+            var v = M.videoAdCheck(ad, format, surfaces);
+            return strengthMeter({ label: v.label === 'Not eligible' ? 'Incomplete' : v.label, issues: v.issues.slice(0, 6), errors: v.errors }) + abcdPanel(ad, format);
+          }) +
+          '<p class="lbl">Where it shows (mock-ups)</p>' + live('prev-' + g.id + '-' + ai, function () { return videoContexts(c, ad, ab); }) + '</div></div></div>';
       });
+      if ((g.ads || []).length < 3) h += btn('＋ Add another video ad to ' + esc(g.name), 'addAd', [c.id, g.id], 'ghost');
     });
     return h;
   }
@@ -861,7 +901,7 @@
 
   // ----- Previews -----
   function viewPreviews() {
-    var h = header('Ad previews', 'How your ads could appear across Google Search, the Display Network, YouTube and Shopping.', previewToolbar());
+    var h = header('Ad previews', 'How your ads could appear across Google Search, the Display Network, YouTube and Shopping. Use Stimulus view for a full-size mock-up you can save as an image.', previewToolbar());
     var any = false;
     S.campaigns.forEach(function (c) {
       var body = '';
@@ -869,15 +909,16 @@
         (c.adGroups || []).forEach(function (g) {
           (g.ads || []).forEach(function (ad) {
             var k = M.adGroupKeywords(g)[0];
-            body += '<figure><figcaption>' + esc(g.name) + '</figcaption>' + P.serpPage({ ad: ad, account: S.account, campaign: c, keywords: M.adGroupKeywords(g), device: UI.device, combo: UI.combo, query: k ? k.text : '' }) + '</figure>';
+            body += '<figure><figcaption>' + esc(g.name) + ' ' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, g.ads.indexOf(ad)], 'small') + '</figcaption>' + P.serpPage({ ad: ad, account: S.account, campaign: c, keywords: M.adGroupKeywords(g), device: UI.device, combo: UI.combo, query: k ? k.text : '' }) + '</figure>';
           });
         });
       } else if (c.type === 'display') {
-        (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (ad) { body += '<figure><figcaption>' + esc(g.name) + '</figcaption>' + P.displayGallery(ad, S.account, UI.combo) + '</figure>'; }); });
+        (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (ad, ai) { body += '<figure><figcaption>' + esc(g.name) + ' ' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + '</figcaption>' + P.displayGallery(ad, S.account, UI.combo) + '</figure>'; }); });
       } else if (c.type === 'video') {
-        (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (ad) { body += '<figure><figcaption>' + esc(g.name) + '</figcaption>' + P.videoGallery(ad, c.videoFormat, S.account) + '</figure>'; }); });
+        var ci = campIndex(c.id);
+        (c.adGroups || []).forEach(function (g, gi) { (g.ads || []).forEach(function (ad, ai) { body += '<figure><figcaption>' + esc(g.name) + ' ' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + '</figcaption>' + videoContexts(c, ad, 'campaigns.' + ci + '.adGroups.' + gi + '.ads.' + ai) + '</figure>'; }); });
       } else if (c.type === 'shopping') {
-        body += P.shoppingCarousel(S.products, S.account, (S.products[0] && S.products[0].category) || '');
+        body += '<figure><figcaption>' + btn('🎯 Stimulus view', 'openStim', [c.id, null, 0], 'small') + '</figcaption>' + P.shoppingCarousel(S.products, S.account, (S.products[0] && S.products[0].category) || '') + '</figure>';
       }
       if (body) { any = true; h += '<div class="card"><h3>' + typeBadge(c.type) + ' ' + esc(c.name) + '</h3><div class="prev-list">' + body + '</div></div>'; }
     });
@@ -916,7 +957,7 @@
   }
 
   // ----- Reports -----
-  var REPORT_TABS = [['campaigns', 'Campaigns'], ['adgroups', 'Ad groups'], ['keywords', 'Keywords'], ['terms', 'Search terms'], ['audiences', 'Audiences & placements'], ['products', 'Products'], ['devices', 'Devices'], ['analytics', 'Website analytics'], ['daily', 'Daily']];
+  var REPORT_TABS = [['campaigns', 'Campaigns'], ['adgroups', 'Ad groups'], ['keywords', 'Keywords'], ['terms', 'Search terms'], ['audiences', 'Audiences & placements'], ['products', 'Products'], ['devices', 'Devices'], ['youtube', 'YouTube placements'], ['analytics', 'Website analytics'], ['daily', 'Daily']];
 
   function viewReports() {
     var r = currentRound();
@@ -960,7 +1001,7 @@
         { key: 'cpm', label: 'Avg. CPM', num: true, fmt: function (x) { return fMoney(x.cpm); } }, { key: 'reach', label: 'Unique reach', num: true, fmt: function (x) { return fInt(x.reach); } },
         { key: 'frequency', label: 'Avg. frequency', num: true, fmt: function (x) { return fNum(x.frequency); } }, { key: 'earnedViews', label: 'Earned views', num: true, fmt: function (x) { return fInt(x.earnedViews); } },
         { key: 'adRecallLift', label: 'Ad recall lift (est.)', num: true, fmt: function (x) { return '+' + fNum(x.adRecallLift) + ' pts'; } },
-        { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } }, { key: 'viewThrough', label: 'View-through conv.', num: true, fmt: function (x) { return convCell(r, x.viewThrough); } }
+        { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } }, { key: 'viewThrough', label: 'Engaged-view conv.', num: true, fmt: function (x) { return convCell(r, x.viewThrough); } }
       ], vids);
       var disp = r.campaigns.filter(function (c) { return c.type === 'display' && !c.errors.length; });
       if (disp.length) body += '<h3 class="section">Display reach</h3>' + dataTable('rep-display', [
@@ -1049,6 +1090,34 @@
         ], ga.channels) +
         '<h3 class="section">Top landing pages (paid traffic)</h3>' + dataTable('rep-lp', [{ key: 'url', label: 'Landing page', fmt: function (x) { return esc(x.url); } }, { key: 'sessions', label: 'Sessions', num: true, fmt: function (x) { return fInt(x.sessions); } }], ga.landingPages);
     }
+    if (tab === 'youtube') {
+      var vs = r.videoSurfaces || [];
+      body = '<p class="help">How each YouTube placement performed. Conversions include engaged-view conversions (people who watched and converted later). ' + guideLink('VID-6') + '</p>' +
+        dataTable('rep-yt', [
+          { key: 'name', label: 'Placement', fmt: function (x) { return '<b>' + esc(x.name) + '</b>'; } },
+          { key: 'campaign', label: 'Campaign' },
+          { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
+          { key: 'views', label: 'Views', num: true, fmt: function (x) { return fInt(x.views); } },
+          { key: 'viewRate', label: 'View rate', num: true, fmt: function (x) { return fPct(x.viewRate, 1); } },
+          { key: 'cpv', label: 'Avg. CPV', num: true, fmt: function (x) { return x.views ? fMoney(x.cpv) : '—'; } },
+          { key: 'cpm', label: 'Avg. CPM', num: true, fmt: function (x) { return fMoney(x.cpm); } },
+          { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+          { key: 'ctr', label: 'CTR', num: true, fmt: function (x) { return fPct(x.ctr); } },
+          { key: 'cost', label: 'Cost', num: true, fmt: function (x) { return fMoney(x.cost); } },
+          { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions); } },
+          { key: 'cpa', label: 'Cost / conv.', num: true, fmt: function (x) { return r.tracked && x.conversions ? fMoney(x.cpa) : '—'; } },
+          { key: 'reach', label: 'Reach', num: true, fmt: function (x) { return fInt(x.reach); } },
+          { key: 'frequency', label: 'Frequency', num: true, fmt: function (x) { return fNum(x.frequency); } },
+          { key: 'adRecallLift', label: 'Ad recall lift', num: true, fmt: function (x) { return '+' + fNum(x.adRecallLift) + ' pts'; } }
+        ], vs, { empty: 'No YouTube campaigns ran this round.' }) +
+        '<h3 class="section">Channels and sites</h3>' + dataTable('rep-yt-pl', [
+          { key: 'placement', label: 'Where it showed' }, { key: 'campaign', label: 'Campaign' },
+          { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
+          { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+          { key: 'cost', label: 'Cost', num: true, fmt: function (x) { return fMoney(x.cost); } },
+          { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions); } }
+        ], r.placements.filter(function (p) { return p.kind === 'video'; }), { empty: 'No YouTube campaigns ran this round.' });
+    }
     if (tab === 'daily') {
       body = '<div class="grid2">' +
         lineChart('d-impr', r.daily.map(function (d) { return { label: 'Day ' + d.day, y: d.impressions }; }), { title: 'Impressions', name: 'Impressions', color: '--series-1' }) +
@@ -1122,6 +1191,8 @@
       '<li><b>Search terms</b>: exact match shows on the keyword\'s meaning; phrase adds modifiers; broad adds related and irrelevant searches. Negatives block them.</li>' +
       '<li><b>Conversion rate</b> depends on search intent, keyword relevance to your business, landing page, location fit, device and schedule.</li>' +
       '<li><b>Display/Video reach</b> depends on audience size, demographics, and your bid vs. market CPM; frequency above ~10/month causes fatigue.</li>' +
+      '<li><b>YouTube</b> results depend on the placement (in-stream, feeds, search, Shorts, TV screens, video partners), the format, the ABCD creative score, audience fit and inventory type. Conversions include engaged-view conversions.</li>' +
+      '<li><b>Profit</b> = conversion value × margin − ad cost. Industry values are set so an average advertiser roughly breaks even; good setups earn a profit and poor ones lose money.</li>' +
       '<li><b>Shopping</b> visibility depends on feed quality (titles, GTIN, images), price competitiveness and bids.</li>' +
       '<li>Each round has small random market changes (competition, seasonality). Results for the same setup in the same round are reproducible.</li></ul></div>';
   }
@@ -1135,6 +1206,143 @@
       '<div class="card"><h3>Reset</h3><p>Clear simulation rounds but keep your campaigns, or start over completely.</p><div class="row wrap">' + btn('Clear rounds', 'resetRounds', null, 'ghost danger') + btn('Start over', 'resetAll', null, 'danger') + '</div></div>' +
       '<div class="card"><h3>About</h3><p>Digital Ad Lab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC; this project is not affiliated with Google.</p></div></div>';
   }
+
+  // ---------------------------------------------------------------------------
+  // Stimulus viewer: one ad in one full-size context, exportable as PNG
+  // ---------------------------------------------------------------------------
+
+  function allAds() {
+    var out = [];
+    S.campaigns.forEach(function (c) {
+      if (c.type === 'shopping') { out.push({ c: c, g: null, ai: 0, label: c.name + ' · products' }); return; }
+      (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (ad, ai) { out.push({ c: c, g: g, ai: ai, label: c.name + ' · ' + g.name + ' · ad ' + (ai + 1) }); }); });
+    });
+    return out;
+  }
+
+  function stimContexts(c) {
+    if (c.type === 'video') return YT.contextsFor(c.videoFormat || 'skippable', c.videoSurfaces).map(function (id) { return [id, YT.CONTEXTS[id].label]; });
+    if (c.type === 'search') return [['serp-desktop', 'Search results · desktop'], ['serp-mobile', 'Search results · mobile']];
+    if (c.type === 'display') return [['site-desktop', 'News article · desktop'], ['site-mobile', 'News article · mobile']].concat(
+      P.displayFormats({}, S.account, 0).map(function (f, i) { return ['fmt-' + i, f.label + ' (ad only)']; }));
+    return [['shop-desktop', 'Shopping results · desktop']];
+  }
+
+  function articleBars(n) {
+    var h = '';
+    for (var i = 0; i < n; i++) h += '<div class="ytm-lines"><i></i><i></i><i class="s"></i><i></i><i class="s"></i></div>';
+    return h;
+  }
+
+  function stimMarkup(st) {
+    var c = campById(st.cid);
+    var g = c && st.gid ? (c.adGroups || []).find(function (x) { return x.id === st.gid; }) : null;
+    var ad = g ? g.ads[st.ai] : null;
+    var acc = S.account;
+    var ctx = st.context;
+    if (c.type === 'video') {
+      var path = 'campaigns.' + campIndex(c.id) + '.adGroups.' + c.adGroups.indexOf(g) + '.ads.' + st.ai;
+      var cx = YT.CONTEXTS[ctx];
+      return { w: cx.w, h: cx.h, html: YT.render(ctx, ad, acc, c.videoFormat || 'skippable', S, { skipState: st.skip, videoSrc: UI.videoFiles[path] }) };
+    }
+    var mobile = /mobile/.test(ctx);
+    var W = mobile ? 390 : 1280, H = mobile ? 844 : 800;
+    var page = function (inner) { return '<div class="ytm" style="width:' + W + 'px;height:' + H + 'px;padding:' + (mobile ? 12 : 24) + 'px">' + inner + '</div>'; };
+    if (c.type === 'search') {
+      var k = M.adGroupKeywords(g)[0];
+      return { w: W, h: H, html: page(P.serpPage({ ad: ad, account: acc, campaign: c, keywords: M.adGroupKeywords(g), device: mobile ? 'mobile' : 'desktop', combo: st.combo, query: k ? k.text : '' }).replace('class="serp', 'style="max-width:none;border:0" class="serp')) };
+    }
+    if (c.type === 'display') {
+      var f = P.displayFormats(ad, acc, st.combo);
+      if (/^fmt-/.test(ctx)) {
+        var i = Number(ctx.slice(4));
+        return { w: null, h: null, html: '<div class="ytm" style="display:inline-block;padding:24px;background:#fff">' + f[i].html + '</div>' };
+      }
+      var topic = M.contentTopic(S);
+      var head = '<div class="ytm-site-head"><b>THE DAILY BRIEF</b><span>News · Lifestyle · Tech</span></div>';
+      var title = '<h1 style="font:700 ' + (mobile ? 24 : 32) + 'px/1.2 Georgia,serif;margin:16px 0 8px">What the latest ' + esc(topic) + ' trend means for you</h1><p class="ytm-byline">By Staff Writer · 4 min read</p>';
+      if (mobile) return { w: W, h: H, html: '<div class="ytm ytm-site" style="width:' + W + 'px;height:' + H + 'px">' + head + '<div style="padding:0 14px">' + title + articleBars(1) + '<div style="display:flex;justify-content:center">' + f[0].html + '</div>' + articleBars(2) + '</div><div style="position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;background:#fff;border-top:1px solid #ddd">' + f[2].html + '</div></div>' };
+      return { w: W, h: H, html: '<div class="ytm ytm-site" style="width:' + W + 'px;height:' + H + 'px">' + head + '<div style="display:flex;justify-content:center;margin:14px 0">' + f[1].html + '</div><div style="display:grid;grid-template-columns:1fr 300px;gap:32px;max-width:1040px;margin:0 auto"><div>' + title + articleBars(4) + '</div><div style="padding-top:16px">' + f[0].html + '</div></div></div>' };
+    }
+    return { w: W, h: H, html: page('<div class="serp" style="max-width:none;border:0"><div class="serp-search"><span class="serp-logo">Search</span><div class="serp-box">' + esc((S.products[0] && S.products[0].category) || 'products') + '<span>🔍</span></div></div>' + P.shoppingCarousel(S.products, acc, (S.products[0] && S.products[0].category) || '') + '<div class="serp-organic"><div class="bar w40"></div><div class="bar w70 big"></div><div class="bar w90"></div></div></div>') };
+  }
+
+  function renderStim() {
+    var box = document.getElementById('stim');
+    var st = UI.stim;
+    if (!st) { box.hidden = true; return; }
+    var c = campById(st.cid);
+    if (!c) { UI.stim = null; box.hidden = true; return; }
+    var ctxs = stimContexts(c);
+    if (!ctxs.some(function (x) { return x[0] === st.context; })) st.context = ctxs.length ? ctxs[0][0] : null;
+    var ads = allAds();
+    var key = st.cid + '|' + (st.gid || '') + '|' + st.ai;
+    var panel = '<h3>Stimulus view</h3><p class="help">A full-size mock-up of one ad in one context. Keep everything else identical across conditions and change one variable at a time.</p>' +
+      field('Ad', '<select data-stim="ad" id="stim-ad">' + ads.map(function (x) { var k = x.c.id + '|' + (x.g ? x.g.id : '') + '|' + x.ai; return '<option value="' + esc(k) + '"' + (k === key ? ' selected' : '') + '>' + esc(x.label) + '</option>'; }).join('') + '</select>') +
+      (ctxs.length ? field('Context', '<select data-stim="context" id="stim-context">' + ctxs.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === st.context ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>') : '<p class="bad-text">This ad has no placement to show in. Choose placements in the campaign settings.</p>') +
+      (c.type === 'video' && (c.videoFormat || 'skippable') === 'skippable' ? field('Skip button', '<select data-stim="skip" id="stim-skip"><option value="counting"' + (st.skip === 'counting' ? ' selected' : '') + '>Counting down (first 5 seconds)</option><option value="skippable"' + (st.skip === 'skippable' ? ' selected' : '') + '>Skippable</option></select>') : '') +
+      (c.type === 'search' || c.type === 'display' ? '<div>' + btn('🔀 Another asset combination', 'stimShuffle', null, 'small') + '</div>' : '') +
+      '<div class="row wrap">' + btn('⬇ Download PNG', 'stimDownload', null, 'primary') + btn('Close', 'stimClose', null, 'ghost') + '</div>' +
+      '<p class="help">The PNG is rendered at 2× resolution. Images from other websites cannot be included; upload images instead.</p>';
+    box.querySelector('.stim-panel').innerHTML = panel;
+    var stage = box.querySelector('.stim-stage');
+    if (!st.context) { stage.innerHTML = ''; box.hidden = false; return; }
+    var m = stimMarkup(st);
+    box.hidden = false;
+    var sw = stage.clientWidth - 40, sh = stage.clientHeight - 40;
+    if (m.w) {
+      var sc = Math.min(1, sw / m.w, sh / m.h);
+      stage.innerHTML = '<div class="stim-holder" style="width:' + Math.round(m.w * sc) + 'px;height:' + Math.round(m.h * sc) + 'px;overflow:hidden"><div style="width:' + m.w + 'px;height:' + m.h + 'px;transform:scale(' + sc.toFixed(4) + ');transform-origin:0 0">' + m.html + '</div></div>';
+    } else {
+      stage.innerHTML = '<div class="stim-holder">' + m.html + '</div>';
+    }
+    wireImages(stage);
+  }
+
+  function openStim(cid, gid, ai) {
+    UI.stim = Object.assign({ cid: cid, gid: gid, ai: ai || 0, context: null, skip: 'counting', combo: UI.combo }, {});
+    renderStim();
+  }
+
+  function stimDownload() {
+    if (!window.html2canvas) { toast('The image tool did not load. Check your internet connection and reload the page.'); return; }
+    var st = UI.stim;
+    var m = stimMarkup(st);
+    var holder = document.createElement('div');
+    holder.className = 'stim-capture';
+    holder.innerHTML = m.html;
+    document.body.appendChild(holder);
+    var target = holder.firstElementChild;
+    var c = campById(st.cid);
+    var name = ('stimulus-' + (c ? c.name : 'ad') + '-' + st.context).replace(/[^a-z0-9]+/gi, '-').replace(/-+$/, '').toLowerCase() + '.png';
+    toast('Rendering image…');
+    setTimeout(function () {
+      window.html2canvas(target, { scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true }).then(function (canvas) {
+        holder.remove();
+        canvas.toBlob(function (blob) {
+          if (!blob) { toast('Could not create the image.'); return; }
+          if (FRAMED) saveFramed(name, blob);
+          else {
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+          }
+        }, 'image/png');
+      }, function (err) { holder.remove(); toast('Could not create the image: ' + (err && err.message || 'error')); });
+    }, 250);
+  }
+
+  // Live skip-button countdown in previews (Skip in 5…1, then Skip)
+  setInterval(function () {
+    var phase = Math.floor(Date.now() / 1000) % 12;
+    document.querySelectorAll('[data-skip="live"]').forEach(function (el) {
+      if (phase < 5) { el.classList.remove('ready'); el.innerHTML = 'Skip in <b>' + (5 - phase) + '</b>'; }
+      else { el.classList.add('ready'); el.textContent = 'Skip ▸|'; }
+    });
+  }, 1000);
 
   // ---------------------------------------------------------------------------
   // Render & routing
@@ -1332,6 +1540,11 @@
       save(); render(true); toast(n + ' product(s) imported.');
     },
     clearImage: function (el, args) { setPath(S, args[0], ''); save(); render(true); },
+    clearVideoFile: function (el, path) { if (UI.videoFiles[path]) URL.revokeObjectURL(UI.videoFiles[path]); delete UI.videoFiles[path]; render(true); },
+    openStim: function (el, args) { openStim(args[0], args[1], args[2]); },
+    stimShuffle: function () { UI.stim.combo++; renderStim(); },
+    stimDownload: function () { stimDownload(); },
+    stimClose: function () { UI.stim = null; renderStim(); },
     genImage: function (el, args) {
       setPath(S, args[0], 'generated');
       save(); render(true);
@@ -1455,6 +1668,25 @@
 
   document.addEventListener('change', function (e) {
     var el = e.target;
+    if (el.dataset.stim) {
+      if (el.dataset.stim === 'ad') {
+        var parts = el.value.split('|');
+        UI.stim.cid = parts[0]; UI.stim.gid = parts[1] || null; UI.stim.ai = Number(parts[2]) || 0; UI.stim.context = null;
+      } else UI.stim[el.dataset.stim] = el.value;
+      renderStim();
+      return;
+    }
+    if (el.dataset.videoFile) {
+      var vf = el.files && el.files[0];
+      if (vf) {
+        if (!/^video\//.test(vf.type)) { toast('Please choose a video file (MP4, WebM or MOV).'); return; }
+        if (UI.videoFiles[el.dataset.videoFile]) URL.revokeObjectURL(UI.videoFiles[el.dataset.videoFile]);
+        UI.videoFiles[el.dataset.videoFile] = URL.createObjectURL(vf);
+        toast('Video loaded into the previews for this session.');
+        render(true);
+      }
+      return;
+    }
     if (el.dataset.upload) {
       processImage(el.files && el.files[0], el.dataset.upload, el.dataset.kind);
       el.value = '';
@@ -1473,6 +1705,14 @@
     if (!el.dataset.bind) return;
     if (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT' || el.type === 'color') {
       applyBind(el);
+      if (/\.videoFormat$/.test(el.dataset.bind)) {
+        // keep the bid strategy valid for how the new format is sold
+        var vc = getPath(S, el.dataset.bind.replace(/\.videoFormat$/, ''));
+        var vf2 = D.VIDEO_FORMATS[vc.videoFormat];
+        if (vf2.billing === 'cpm' && vc.bidStrategy === 'max_cpv') { vc.bidStrategy = 'target_cpm'; toast(vf2.name + ' ads are bought per 1,000 impressions: bid strategy switched to Target CPM.'); }
+        if (vc.videoFormat !== 'skippable' && E.SMART.indexOf(vc.bidStrategy) >= 0) { vc.bidStrategy = vf2.billing === 'cpm' ? 'target_cpm' : 'max_cpv'; toast('Conversion bidding needs skippable ads: bid strategy switched to ' + D.BID_STRATEGIES[vc.bidStrategy].name + '.'); }
+        if (vc.videoFormat === 'shorts') (vc.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { if (a.aspect === '16:9') a.aspect = '9:16'; }); });
+      }
       if (el.dataset.bind === 'account.industry') {
         var ind = D.INDUSTRIES[S.account.industry];
         if (!S.rounds.length) { S.account.value = ind.value; S.account.margin = ind.margin; S.account.serviceArea = ind.local ? 'local' : 'national'; }
@@ -1506,6 +1746,9 @@
 
   document.addEventListener('mousemove', function (e) { if (e.target.closest && e.target.closest('.chart')) onChartMove(e); });
   document.addEventListener('mouseout', function (e) { if (e.target.classList && e.target.classList.contains('hit')) onChartLeave(e); });
+
+  window.addEventListener('resize', function () { if (UI.stim) renderStim(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && UI.stim) { UI.stim = null; renderStim(); } });
 
   window.addEventListener('hashchange', function () {
     parseRoute();

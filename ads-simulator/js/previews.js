@@ -149,64 +149,6 @@
   }
 
   // ---------------------------------------------------------------------------
-  // YouTube
-  // ---------------------------------------------------------------------------
-
-  function youtubeId(url) {
-    var m = String(url || '').match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([A-Za-z0-9_-]{11})/);
-    return m ? m[1] : '';
-  }
-
-  function videoThumb(ad, acc, w, h) {
-    var id = youtubeId(ad.videoUrl);
-    var ph = placeholder(acc.brandColor, acc.businessName || 'Video', w, h, 'vid' + (acc.businessName || ''));
-    if (ad.thumbnail) return img(ad.thumbnail, ph, 'vthumb', 'Video thumbnail');
-    if (id) return img('https://img.youtube.com/vi/' + id + '/hqdefault.jpg', ph, 'vthumb', 'Video thumbnail');
-    return '<img class="vthumb" src="' + esc(ph) + '" alt="">';
-  }
-
-  function fmtTime(sec) {
-    sec = Math.max(0, Math.round(sec || 0));
-    return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
-  }
-
-  function videoPreview(ad, format, acc) {
-    ad = ad || {};
-    acc = acc || {};
-    var name = acc.businessName || 'Your Business';
-    var domain = U.domainOf(ad.finalUrl || acc.website) || 'example.com';
-    var len = Number(ad.length) || 30;
-    var out = [];
-    var ctaBtn = '<span class="yt-cta">' + esc(ad.cta || 'Learn more') + '</span>';
-    if (format === 'shorts') {
-      out.push({ label: 'YouTube Shorts (9:16)', html: '<div class="yt-shorts">' + videoThumb(ad, acc, 270, 480) + '<div class="yt-shorts-ui"><div class="yt-shorts-meta"><span class="logo-ph" style="background:' + esc(acc.brandColor || '#1a73e8') + '">' + initial(name) + '</span><b>' + esc(name) + '</b> <span class="yt-badge">Sponsored</span></div><div class="yt-shorts-title">' + esc(ad.headline || 'Your headline') + '</div>' + ctaBtn.replace('yt-cta', 'yt-cta wide') + '</div>' + (ad.aspect !== '9:16' ? '<div class="yt-warn">Not vertical — black bars shown</div>' : '') + '</div>' });
-    } else if (format === 'infeed') {
-      out.push({ label: 'In-feed video (search results / watch next)', html: '<div class="yt-infeed"><div class="yt-infeed-thumb">' + videoThumb(ad, acc, 320, 180) + '<span class="yt-dur">' + fmtTime(len) + '</span></div><div class="yt-infeed-body"><div class="yt-infeed-title">' + esc(ad.headline || 'Your video headline') + '</div><div class="yt-infeed-desc">' + esc(ad.description || 'Your description line.') + '</div><div class="yt-infeed-meta"><span class="yt-badge">Sponsored</span> ' + esc(name) + '</div></div></div>' });
-    } else {
-      var skip = format === 'skippable'
-        ? '<span class="yt-skip">Skip <span class="yt-skip-count">5</span> ▸|</span>'
-        : '';
-      var label = format === 'bumper' ? 'Bumper ad (6s, non-skippable)' : format === 'nonskip' ? 'Non-skippable in-stream (≤15s)' : 'Skippable in-stream (skip after 5s)';
-      var adLen = format === 'bumper' ? Math.min(len, 6) : format === 'nonskip' ? Math.min(len, 15) : len;
-      out.push({
-        label: label,
-        html: '<div class="yt-player">' + videoThumb(ad, acc, 640, 360) +
-          '<div class="yt-overlay-top"><span class="yt-badge">Sponsored</span> · ' + esc(domain) + '</div>' +
-          '<div class="yt-card"><span class="logo-ph" style="background:' + esc(acc.brandColor || '#1a73e8') + '">' + initial(name) + '</span><div><b>' + esc(ad.headline || name) + '</b><div>' + esc(domain) + '</div></div>' + ctaBtn + '</div>' +
-          skip + '<div class="yt-progress"><span></span></div><div class="yt-time">Ad · 0:0' + (format === 'skippable' ? '3' : '1') + ' / ' + fmtTime(adLen) + '</div></div>' +
-          (ad.companion && format !== 'bumper' ? '<div class="yt-companion"><span class="logo-ph" style="background:' + esc(acc.brandColor || '#1a73e8') + '">' + initial(name) + '</span><div><b>' + esc(ad.longHeadline || ad.headline || name) + '</b><div>' + esc(domain) + '</div></div>' + ctaBtn + '</div>' : '')
-      });
-    }
-    return out;
-  }
-
-  function videoGallery(ad, format, acc) {
-    return '<div class="yt-gallery">' + videoPreview(ad, format, acc).map(function (f) {
-      return '<figure><figcaption>' + esc(f.label) + '</figcaption>' + f.html + '</figure>';
-    }).join('') + '</div>';
-  }
-
-  // ---------------------------------------------------------------------------
   // Shopping
   // ---------------------------------------------------------------------------
 
@@ -245,7 +187,7 @@
 
   AdSim.previews = {
     esc: esc, placeholder: placeholder, searchAd: searchAd, serpPage: serpPage, displayGallery: displayGallery,
-    displayFormats: displayFormats, videoGallery: videoGallery, shoppingCarousel: shoppingCarousel, shoppingCard: shoppingCard,
-    youtubeId: youtubeId, safeUrl: safeUrl
+    displayFormats: displayFormats, shoppingCarousel: shoppingCarousel, shoppingCard: shoppingCard,
+    safeUrl: safeUrl
   };
 })(typeof window !== 'undefined' ? window : globalThis);

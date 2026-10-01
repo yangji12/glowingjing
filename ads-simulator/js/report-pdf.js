@@ -194,6 +194,12 @@
         return [c.name, int(c.views), pct(c.viewRate, 1), money(c.cpv), int(c.reach), (c.frequency || 0).toFixed(1), '+' + (c.adRecallLift || 0).toFixed(1) + ' pts'];
       }));
     }
+    var yts = (r.videoSurfaces || []).filter(function (v) { return v.impressions > 0; });
+    if (yts.length) {
+      table(['YouTube placement', 'Campaign', 'Impr.', 'Views', 'View rate', 'Cost', 'Clicks', 'Conv.', 'Ad recall lift'], yts.map(function (v) {
+        return [v.name, v.campaign, int(v.impressions), int(v.views), pct(v.viewRate, 1), money(v.cost), int(v.clicks), tracked ? int(v.conversions) : 'n/t', '+' + (v.adRecallLift || 0).toFixed(1) + ' pts'];
+      }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5 } });
+    }
     if (!tracked) {
       doc.setFont('helvetica', 'italic'); doc.setFontSize(8); setColor(MUTED);
       text('n/t = not tracked. Conversion tracking was off, so these conversions would be invisible in a real account.', M, y - 8);

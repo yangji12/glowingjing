@@ -63,20 +63,26 @@
   function newVideoAd(state) {
     var acc = state ? state.account : {};
     return {
-      videoUrl: '', length: 30, aspect: '16:9', hook: false, brandEarly: false, captions: false,
+      videoUrl: '', length: 30, aspect: '16:9', hook: false, pacing: false, brandEarly: false, brandAudio: false,
+      people: false, productDemo: false, captions: false, endCard: false,
       headline: '', longHeadline: '', description: '', cta: 'Learn more', finalUrl: acc.website || '',
-      companion: false, thumbnail: ''
+      companion: false, thumbnail: '', verticalThumb: ''
     };
   }
 
+  function benchCpc(state, type) {
+    var ind = D.INDUSTRIES[state && state.account.industry] || D.INDUSTRIES.retail;
+    return Math.round(ind[type].cpc * 1.25 * 20) / 20;
+  }
+
   function newAdGroup(type, state, name) {
-    var g = { id: U.uid('ag'), name: name || 'Ad group 1', defaultBid: 1.5 };
+    var g = { id: U.uid('ag'), name: name || 'Ad group 1', defaultBid: benchCpc(state, 'search') };
     if (type === 'search') {
       g.keywordsText = '';
       g.negativesText = '';
       g.ads = [newRSA(state)];
     } else if (type === 'display') {
-      g.defaultBid = 0.8;
+      g.defaultBid = benchCpc(state, 'display');
       g.targeting = newTargeting();
       g.ads = [newRDA(state)];
     } else if (type === 'video') {
@@ -91,7 +97,7 @@
     var c = {
       id: U.uid('cmp'), type: type, name: D.CAMPAIGN_TYPES[type].name + ' campaign ' + n, status: 'enabled',
       goal: goal || state.account.goal, dailyBudget: type === 'video' ? 25 : 30,
-      bidStrategy: defaultBidStrategy(type, state), maxCpc: type === 'shopping' ? 0.8 : 2, targetCpa: 0, targetRoas: 0,
+      bidStrategy: defaultBidStrategy(type, state), maxCpc: benchCpc(state, type === 'shopping' ? 'shopping' : type === 'display' ? 'display' : 'search'), targetCpa: 0, targetRoas: 0,
       targetIs: 70, maxCpv: 0.05, targetCpm: 8,
       locations: defaultLocations(state), locationOption: 'presenceOrInterest', language: 'en', schedule: 'all',
       devices: { mobile: 0, desktop: 0, tablet: 0 },
@@ -107,11 +113,13 @@
       c.adGroups = [newAdGroup('display', state)];
     } else if (type === 'video') {
       c.videoFormat = 'skippable';
+      c.videoSurfaces = Object.keys(D.YT_SURFACES);
+      c.inventory = 'standard';
       c.freqCap = 0;
       c.adGroups = [newAdGroup('video', state)];
     } else if (type === 'shopping') {
       c.priority = 'low';
-      c.productGroups = [{ id: U.uid('pg'), dimension: 'all', value: '', bid: 0.8, excluded: false }];
+      c.productGroups = [{ id: U.uid('pg'), dimension: 'all', value: '', bid: benchCpc(state, 'shopping'), excluded: false }];
     }
     return c;
   }
@@ -271,10 +279,11 @@
     if (hasCTA(headlines.concat(descriptions))) pts += 1; else issues.push('Add a call to action (e.g., "Shop Now", "Get a Quote")');
     if (hasOffer(headlines.concat(descriptions))) pts += 0.5; else issues.push('Mention an offer, price or number (e.g., "Free Shipping", "20% Off")');
     var valid = headlines.length >= 3 && descriptions.length >= 2;
+    var serves = headlines.length >= 1 && descriptions.length >= 1;
     if (!valid) issues.unshift('A responsive search ad needs at least 3 headlines and 2 descriptions');
     var label = valid ? strengthLabel(pts, 9.5) : 'Incomplete';
     return {
-      valid: valid, points: pts, max: 9.5, label: label, headlines: headlines, descriptions: descriptions,
+      valid: valid, serves: serves, points: pts, max: 9.5, label: label, headlines: headlines, descriptions: descriptions,
       issues: issues, policy: policy.concat(tooLong), keywordCoverage: cov
     };
   }
@@ -311,33 +320,46 @@
     if (ad.logoUrl) pts += 1; else issues.push('Add a logo');
     if (hasCTA(headlines.concat(descriptions, [lh]))) pts += 0.5; else issues.push('Add a call to action in the text');
     var valid = headlines.length >= 1 && descriptions.length >= 1 && !!lh && !!bn && !!ad.finalUrl;
+    var serves = !!(headlines.length || lh) && !!(descriptions.length || lh);
     if (!valid) issues.unshift('A responsive display ad needs at least 1 headline, a long headline, 1 description, a business name and a final URL');
     // Formats: without images the ad can only serve as text/native formats
     var formatReach = 0.45 + (ad.landscapeImage ? 0.3 : 0) + (ad.squareImage ? 0.25 : 0);
     return {
-      valid: valid, points: pts, max: 9, label: valid ? strengthLabel(pts, 9) : 'Incomplete',
+      valid: valid, serves: serves, points: pts, max: 9, label: valid ? strengthLabel(pts, 9) : 'Incomplete',
       headlines: headlines, descriptions: descriptions, longHeadline: lh, issues: issues, policy: policy, formatReach: formatReach
     };
   }
 
-  function videoAdCheck(ad, format) {
+  // ABCD creative score (0..1) and per-letter breakdown for a video ad
+  function videoCreative(ad) {
+    var parts = D.ABCD.map(function (g) {
+      var have = g.items.filter(function (it) { return !!ad[it[0]]; }).length;
+      return { key: g.key, name: g.name, have: have, total: g.items.length, score: have / g.items.length };
+    });
+    // Attract and Brand matter most for view rate and recall
+    var w = { A: 0.32, B: 0.28, C: 0.2, D: 0.2 };
+    var score = U.sum(parts, function (p) { return p.score * w[p.key]; });
+    return { score: score, parts: parts };
+  }
+
+  function videoAdCheck(ad, format, surfaces) {
     var f = D.VIDEO_FORMATS[format] || D.VIDEO_FORMATS.skippable;
     var errors = [];
     var issues = [];
-    var len = Number(ad.length) || 0;
-    if (!len) errors.push('Enter the video length in seconds');
+    var len = Number(ad.length) || 30;
     if (f.maxLen && len > f.maxLen) errors.push(f.name + ' ads must be ' + f.maxLen + ' seconds or shorter (yours: ' + len + 's)');
-    if (format === 'shorts' && ad.aspect !== '9:16') issues.push('Shorts should use vertical 9:16 video');
-    if (!ad.finalUrl) errors.push('Add a final URL');
-    if (!ad.hook) issues.push('Hook viewers in the first 5 seconds');
-    if (!ad.brandEarly) issues.push('Show your brand in the first 5 seconds');
-    if (!ad.headline && format !== 'bumper') issues.push('Add a headline / CTA headline');
-    if (!ad.cta) issues.push('Add a call-to-action button');
-    if (format === 'skippable' && len > 180) issues.push('Skippable ads over 3 minutes lose most viewers — aim for 15–60 seconds');
-    if (!ad.companion && (format === 'skippable' || format === 'nonskip')) issues.push('Add a companion banner');
-    var pts = (ad.hook ? 2 : 0) + (ad.brandEarly ? 2 : 0) + (ad.headline ? 1 : 0) + (ad.cta ? 1 : 0) + (ad.companion ? 0.5 : 0) + (ad.captions ? 0.5 : 0) +
-      (format === 'skippable' ? (len >= 12 && len <= 60 ? 2 : len <= 180 ? 1 : 0) : 2);
-    return { valid: errors.length === 0, errors: errors, issues: issues, points: pts, max: 9, label: errors.length ? 'Not eligible' : strengthLabel(pts, 9) };
+    var cr = videoCreative(ad);
+    D.ABCD.forEach(function (g) {
+      g.items.forEach(function (it) { if (!ad[it[0]] && !(it[0] === 'headline' && format === 'bumper')) issues.push(g.name + ': ' + it[1].toLowerCase()); });
+    });
+    var onShorts = format === 'shorts' || (surfaces && surfaces.indexOf('shorts') >= 0);
+    if (onShorts && ad.aspect !== '9:16') issues.push('Shorts: use vertical 9:16 video, or horizontal video shows small with black bars');
+    if (format === 'skippable' && len > 180) issues.push('Skippable ads over 3 minutes lose most viewers: aim for 15–60 seconds');
+    if (!ad.companion && (format === 'skippable' || format === 'nonskip')) issues.push('Add a companion banner (desktop)');
+    if (format === 'infeed' && !ad.description) issues.push('In-feed ads show a description line: add one');
+    var lenScore = format === 'skippable' ? (len >= 12 && len <= 60 ? 1 : len <= 180 ? 0.6 : 0.2) : 1;
+    var pts = cr.score * 8 + lenScore * 1.5 + (ad.companion ? 0.5 : 0);
+    return { valid: errors.length === 0, errors: errors, issues: issues, points: pts, max: 10, creative: cr, label: errors.length ? 'Not eligible' : strengthLabel(pts, 10) };
   }
 
   // ---------------------------------------------------------------------------
@@ -425,6 +447,13 @@
     return ks.filter(function (k) { return k && k.length > 2; }).slice(0, 12);
   }
 
+  // A short topic for the business ("coffee beans", "car accident"), used to name sample
+  // YouTube channels and the content videos in ad mock-ups.
+  function contentTopic(state) {
+    var k = scanKeywords(state)[0] || '';
+    return k || (D.INDUSTRIES[state.account.industry] || D.INDUSTRIES.retail).vocab.split(' ')[0];
+  }
+
   // Builds a "Google default"-style draft Search campaign. It is deliberately a starting point:
   // broad match everywhere, network defaults left on, no negatives. Students improve it.
   function quickStartSearch(state) {
@@ -494,6 +523,12 @@
     s.campaigns = s.campaigns || [];
     s.rounds = s.rounds || [];
     if (typeof s.seed !== 'number') s.seed = base.seed;
+    s.campaigns.forEach(function (c) {
+      if (c.type === 'video') {
+        if (!c.videoSurfaces) c.videoSurfaces = Object.keys(D.YT_SURFACES);
+        if (!c.inventory) c.inventory = 'standard';
+      }
+    });
     return s;
   }
 
@@ -501,7 +536,7 @@
     newState: newState, newCampaign: newCampaign, newAdGroup: newAdGroup, newRSA: newRSA, newRDA: newRDA,
     newVideoAd: newVideoAd, newProduct: newProduct, newTargeting: newTargeting, businessVocab: businessVocab,
     relevance: relevance, intentOf: intentOf, policyIssues: policyIssues, rsaStrength: rsaStrength,
-    rdaStrength: rdaStrength, videoAdCheck: videoAdCheck, feedQuality: feedQuality, quickStartSearch: quickStartSearch,
+    rdaStrength: rdaStrength, videoAdCheck: videoAdCheck, videoCreative: videoCreative, feedQuality: feedQuality, quickStartSearch: quickStartSearch, contentTopic: contentTopic,
     applyTemplate: applyTemplate, adGroupKeywords: adGroupKeywords,
     campaignNegatives: campaignNegatives, absoluteUrl: absoluteUrl, keywordTokenCoverage: keywordTokenCoverage,
     hasCTA: hasCTA, migrate: migrate, fit: fit, STRENGTH_LABELS: STRENGTH_LABELS
