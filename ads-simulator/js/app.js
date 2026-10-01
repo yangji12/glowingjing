@@ -23,6 +23,14 @@
     } catch (e) { /* storage unavailable or corrupt: start fresh */ }
     return M.newState();
   }
+  function saveNow() {
+    clearTimeout(saveTimer);
+    try { localStorage.setItem(KEY, JSON.stringify(S)); return true; } catch (e) { return !storageWorks(); }
+  }
+  // true when storage itself is usable (so a failure means it is full)
+  function storageWorks() {
+    try { localStorage.setItem(KEY + '.probe', '1'); localStorage.removeItem(KEY + '.probe'); return true; } catch (e) { return false; }
+  }
   var saveTimer = null;
   function save() {
     clearTimeout(saveTimer);
@@ -430,7 +438,7 @@
       field('Value per conversion ($)', input('account.value', { type: 'number', min: 0, step: 1, aria: 'Value per conversion' }), 'Average order value, or for leads: average sale × close rate. Industry default: $' + ind.value + '.') +
       field('Profit margin (%)', input('account.margin', { type: 'percent', min: 1, maxVal: 99, step: 1, aria: 'Profit margin' }), 'Break-even ROAS = 1 ÷ margin = ' + (acc.margin > 0 ? (1 / acc.margin).toFixed(2) + '×' : '—') + '.') +
       field('Brand color', '<input type="color" data-bind="account.brandColor" value="' + esc(acc.brandColor) + '" aria-label="Brand color">', 'Used in ad previews.') +
-      field('Logo image URL (optional)', input('account.logoUrl', { placeholder: 'https://…/logo.png', aria: 'Logo URL' })) +
+      field('Logo (optional)', imageField('account.logoUrl', 'logo'), 'Used as the default logo for new display ads.') +
       '</div>' +
       field('What do you sell? (description)', textarea('account.description', { rows: 3, placeholder: 'Describe your products/services, locations and selling points. The simulator uses these words to judge keyword relevance and to build your starter campaign.', aria: 'Business description' })) +
       '<div class="tracking ' + (acc.conversionTracking ? 'on' : 'off') + '">' + checkbox('account.conversionTracking', '<b>Google tag & conversion tracking installed</b>', 'Measures purchases/leads, enables Smart Bidding and builds remarketing lists. ' + guideLink('ACC-1')) + '</div></div>';
@@ -677,7 +685,64 @@
     return h;
   }
 
-  var IMG_HELP = 'Paste an image URL, or click "Use generated image" to use brand-colored artwork.';
+  // Image slots: uploads are center-cropped to the format Google Ads expects and stored with the project.
+  var IMG_SPECS = {
+    landscape: { w: 1200, h: 628, label: 'Landscape 1.91:1 (1200×628)' },
+    square: { w: 600, h: 600, label: 'Square 1:1 (600×600)' },
+    logo: { w: 256, h: 256, label: 'Logo 1:1 (256×256)', png: true },
+    product: { w: 600, h: 600, label: 'Product image 1:1 (600×600)' }
+  };
+
+  function imageField(path, kind) {
+    var spec = IMG_SPECS[kind];
+    var v = String(getPath(S, path) || '');
+    var isData = /^data:image\//.test(v);
+    var thumbSrc = isData ? v : v === 'generated' || !v ? P.placeholder(S.account.brandColor, S.account.businessName || 'Image', spec.w / 4, spec.h / 4, path) : (P.safeUrl(v) || '');
+    var thumb = '<div class="img-thumb' + (v ? '' : ' empty') + '" style="aspect-ratio:' + spec.w + '/' + spec.h + '">' + (v ? '<img src="' + esc(thumbSrc) + '" alt="" data-fallback="' + esc(P.placeholder('#9aa0a6', 'Not loaded', 120, 120, 'x')) + '">' : '<span>No image</span>') + '</div>';
+    var upload = '<label class="btn small ' + (v ? '' : 'primary') + '">⬆ ' + (v ? 'Replace image' : 'Upload image') + '<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-upload="' + esc(path) + '" data-kind="' + kind + '" hidden></label>';
+    var status = isData ? '<span class="good-text">✓ Uploaded image</span>' : v === 'generated' ? '<span class="muted">Generated brand artwork</span>' : v ? '<span class="muted">Image link</span>' : '<span class="muted">Drag an image here or upload one</span>';
+    var linkRow = isData || v === 'generated' ? '' :
+      '<details class="img-link"' + (v ? ' open' : '') + '><summary>Use an image link instead</summary>' + input(path, { placeholder: 'https://…/image.jpg' }) +
+      (FRAMED ? '<div class="help warn-text">Images from other websites are blocked on this page. Upload the file instead.</div>' : '') + '</details>';
+    return '<div class="img-field" data-drop="' + esc(path) + '" data-kind="' + kind + '">' + thumb + '<div class="img-body"><div class="img-spec">' + spec.label + '</div>' + status +
+      '<div class="row wrap">' + upload + (v !== 'generated' ? btn('Use generated artwork', 'genImage', [path], 'small ghost') : '') + (v ? btn('Remove', 'clearImage', [path], 'small ghost danger') : '') + '</div>' + linkRow + '</div></div>';
+  }
+
+  function processImage(file, path, kind) {
+    var spec = IMG_SPECS[kind] || IMG_SPECS.square;
+    if (!file || !/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) { toast('Please choose a PNG, JPG, WebP or GIF image.'); return; }
+    if (file.size > 20 * 1024 * 1024) { toast('That image is over 20 MB. Choose a smaller file.'); return; }
+    var url = URL.createObjectURL(file);
+    var im = new Image();
+    im.onload = function () {
+      URL.revokeObjectURL(url);
+      // cover-crop to the target aspect ratio, never upscaling
+      var target = spec.w / spec.h;
+      var sw = im.naturalWidth, sh = im.naturalHeight;
+      var cw = sw, ch = sh;
+      if (sw / sh > target) cw = Math.round(sh * target); else ch = Math.round(sw / target);
+      var scale = Math.min(1, spec.w / cw);
+      var cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(cw * scale));
+      cv.height = Math.max(1, Math.round(ch * scale));
+      var cx = cv.getContext('2d');
+      if (!spec.png) { cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, cv.width, cv.height); }
+      cx.drawImage(im, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, cv.width, cv.height);
+      var data = spec.png ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.82);
+      var prev = getPath(S, path);
+      setPath(S, path, data);
+      if (!saveNow()) {
+        setPath(S, path, prev);
+        toast('Not enough browser storage for this image. Remove another uploaded image, or export your project first.');
+        return;
+      }
+      var cropped = Math.abs(sw / sh - target) > 0.02;
+      toast('Image added' + (cropped ? ', cropped to ' + spec.label.split(' (')[0] : '') + (cv.width < spec.w ? '. Tip: it is smaller than the recommended ' + spec.w + '×' + spec.h + '.' : '.'));
+      render(true);
+    };
+    im.onerror = function () { URL.revokeObjectURL(url); toast('That file could not be read as an image.'); };
+    im.src = url;
+  }
 
   function displayAds(c, base) {
     var h = '<div class="card info-card">Responsive display ads: you provide assets; Google assembles them into many sizes and formats — the previews on the right show a few. More and better assets = more placements. ' + guideLink('DSP-2') + '</div>';
@@ -690,9 +755,8 @@
           '<p class="lbl">Short headlines (up to 5)</p>' + ad.headlines.map(function (x, i) { return input(ab + '.headlines.' + i, { max: 30, policy: 'headline', placeholder: 'Headline ' + (i + 1) }); }).join('') +
           field('Long headline', input(ab + '.longHeadline', { max: 90, policy: 'description' })) +
           '<p class="lbl">Descriptions (up to 5)</p>' + ad.descriptions.map(function (x, i) { return input(ab + '.descriptions.' + i, { max: 90, policy: 'description', placeholder: 'Description ' + (i + 1) }); }).join('') +
-          '<p class="lbl">Images</p>' + field('Landscape image (1.91:1)', '<div class="row">' + input(ab + '.landscapeImage', { placeholder: 'https://…', cls: 'grow' }) + btn('Use generated image', 'genImage', [ab + '.landscapeImage'], 'small ghost') + '</div>') +
-          field('Square image (1:1)', '<div class="row">' + input(ab + '.squareImage', { placeholder: 'https://…', cls: 'grow' }) + btn('Use generated image', 'genImage', [ab + '.squareImage'], 'small ghost') + '</div>') +
-          field('Logo (1:1)', '<div class="row">' + input(ab + '.logoUrl', { placeholder: 'https://…', cls: 'grow' }) + btn('Use generated logo', 'genImage', [ab + '.logoUrl'], 'small ghost') + '</div>', IMG_HELP) +
+          '<p class="lbl">Images ' + guideLink('DSP-2') + '</p><p class="help">Upload any photo: it is cropped to each required shape automatically. Keep text and logos away from the edges.</p>' +
+          imageField(ab + '.landscapeImage', 'landscape') + imageField(ab + '.squareImage', 'square') + imageField(ab + '.logoUrl', 'logo') +
           '<div class="grid2">' + field('Call to action', select(ab + '.cta', ['Learn more', 'Shop now', 'Sign up', 'Get quote', 'Book now', 'Contact us', 'Apply now', 'Download', 'Subscribe'].map(function (x) { return [x, x]; }))) +
           field('Ad color', '<input type="color" data-bind="' + ab + '.color" value="' + esc(ad.color || S.account.brandColor) + '">') + '</div>' +
           '</div><div class="ad-side">' + live('str-' + g.id + '-' + ai, function () { return strengthMeter(M.rdaStrength(ad)); }) + '<p class="lbl">Previews</p>' + btn('🔀 Show another combination', 'shuffle', null, 'small') +
@@ -780,7 +844,7 @@
         field('Title', input(pb + '.title', { max: 150 })) +
         '<div class="grid3">' + field('Price ($)', input(pb + '.price', { type: 'number', step: 0.01, min: 0 })) + field('Sale price ($, optional)', input(pb + '.salePrice', { type: 'number', step: 0.01, min: 0 })) + field('Typical competitor price ($)', input(pb + '.marketPrice', { type: 'number', step: 0.01, min: 0 }), 'Used to judge price competitiveness.') + '</div>' +
         '<div class="grid3">' + field('Brand', input(pb + '.brand')) + field('GTIN (barcode)', input(pb + '.gtin', { placeholder: '12–14 digits' })) + field('Category / product type', input(pb + '.category')) + '</div>' +
-        '<div class="grid2">' + field('Image link', '<div class="row">' + input(pb + '.imageUrl', { placeholder: 'https://…', cls: 'grow' }) + btn('Use generated image', 'genImage', [pb + '.imageUrl'], 'small ghost') + '</div>') + field('Product page link', input(pb + '.link', { placeholder: '/products/…' })) + '</div>' +
+        '<div class="grid2">' + field('Product image', imageField(pb + '.imageUrl', 'product')) + field('Product page link', input(pb + '.link', { placeholder: '/products/…' })) + '</div>' +
         field('Availability', select(pb + '.availability', [['in_stock', 'In stock'], ['out_of_stock', 'Out of stock'], ['preorder', 'Preorder']])) +
         field('Description', textarea(pb + '.description', { rows: 3, max: 5000 })) +
         '</div><div class="ad-side">' + live('fq-' + p.id, function () {
@@ -1267,6 +1331,7 @@
       UI.csv = '';
       save(); render(true); toast(n + ' product(s) imported.');
     },
+    clearImage: function (el, args) { setPath(S, args[0], ''); save(); render(true); },
     genImage: function (el, args) {
       setPath(S, args[0], 'generated');
       save(); render(true);
@@ -1390,6 +1455,11 @@
 
   document.addEventListener('change', function (e) {
     var el = e.target;
+    if (el.dataset.upload) {
+      processImage(el.files && el.files[0], el.dataset.upload, el.dataset.kind);
+      el.value = '';
+      return;
+    }
     if (el.dataset.actionChange && CHANGE_ACTIONS[el.dataset.actionChange]) { CHANGE_ACTIONS[el.dataset.actionChange](el); return; }
     if (el.dataset.bindArray) {
       var arr = getPath(S, el.dataset.bindArray) || [];
@@ -1413,6 +1483,25 @@
     } else if (el.dataset.bind.indexOf('.name') > 0 || el.dataset.bind === 'account.businessName') {
       renderNav();
     }
+  });
+
+  document.addEventListener('dragover', function (e) {
+    var z = e.target.closest && e.target.closest('[data-drop]');
+    if (!z) return;
+    e.preventDefault();
+    z.classList.add('dragging');
+  });
+  document.addEventListener('dragleave', function (e) {
+    var z = e.target.closest && e.target.closest('[data-drop]');
+    if (z && !z.contains(e.relatedTarget)) z.classList.remove('dragging');
+  });
+  document.addEventListener('drop', function (e) {
+    var z = e.target.closest && e.target.closest('[data-drop]');
+    if (!z) return;
+    e.preventDefault();
+    z.classList.remove('dragging');
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) processImage(f, z.dataset.drop, z.dataset.kind);
   });
 
   document.addEventListener('mousemove', function (e) { if (e.target.closest && e.target.closest('.chart')) onChartMove(e); });
