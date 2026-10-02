@@ -109,8 +109,9 @@
       if (bs.needsConv && !acc.conversionTracking) { bidStatus = 'fail'; bidDetail = bs.name + ' optimizes toward conversions, but conversion tracking is off.'; }
       else if ((c.bidStrategy === 'target_cpa' || c.bidStrategy === 'target_roas') && prevConv < 15) { bidStatus = 'warn'; bidDetail = bs.name + ' works best with 15–30+ conversions in 30 days; this campaign had ' + prevConv + ' last round.'; }
       else if (c.type === 'video') {
-        var fmt = D.VIDEO_FORMATS[c.videoFormat || 'skippable'];
-        if (fmt.billing === 'cpm' && c.bidStrategy === 'max_cpv') { bidStatus = 'fail'; bidDetail = fmt.name + ' is bought on CPM, not CPV.'; }
+        var vsub = D.VIDEO_SUBTYPES[M.videoSubtype(c)];
+        if (vsub.bids.indexOf(c.bidStrategy) < 0) { bidStatus = 'fail'; bidDetail = vsub.name + ' campaigns use ' + vsub.bids.map(function (b) { return D.BID_STRATEGIES[b].name; }).join(' or ') + ', not ' + (bs.name || c.bidStrategy) + '.'; }
+        else if (vsub.needsConv && !acc.conversionTracking) { bidStatus = 'fail'; bidDetail = vsub.name + ' needs conversion tracking.'; }
       } else if (c.bidStrategy === 'max_clicks' && acc.conversionTracking && prevConv >= 15 && (acc.goal === 'sales' || acc.goal === 'leads')) {
         bidStatus = 'warn'; bidDetail = 'You now have conversion data (' + prevConv + ' last round). Maximize clicks ignores conversions.';
       }
@@ -270,43 +271,57 @@
 
   function videoChecks(c, ck, state) {
     targetingChecks(c, ck, state, 'video');
-    var format = c.videoFormat || 'skippable';
+    var subKey = M.videoSubtype(c);
+    var sub = D.VIDEO_SUBTYPES[subKey];
+    var subFormats = Object.keys(sub.formats);
+    var goal = state.account.goal;
+    ck({ id: 'vsub', cat: 'Strategy & structure', guide: 'VID-4', weight: 4, status: sub.goals.indexOf(goal) >= 0 ? 'pass' : 'warn', title: 'Campaign subtype fits the goal',
+      detail: sub.name + ' for a ' + D.GOALS[goal].name + ' goal.' + (sub.goals.indexOf(goal) >= 0 ? '' : ' It is built for: ' + sub.goals.map(function (g) { return D.GOALS[g].name; }).join(', ') + '.'),
+      fix: 'Awareness: Efficient reach, Non-skippable reach, Target frequency or Audio reach. Consideration: Video views, Ad sequence, Subscriptions & engagements. Sales or leads: Drive conversions.' });
     var checks = [];
-    (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { checks.push(M.videoAdCheck(a, format)); }); });
-    var errs = checks.filter(function (x) { return !x.valid; });
-    ck({ id: 'vlen', cat: 'Ads & creative', guide: 'VID-2', weight: 5, status: !checks.length || errs.length ? 'fail' : 'pass', title: 'Video ads meet format requirements', detail: errs.length ? errs[0].errors.join('; ') : checks.length ? 'All video ads are eligible for ' + D.VIDEO_FORMATS[format].name + '.' : 'No video ads.', fix: 'Match the length to the format (bumper ≤ 6s, non-skippable ≤ 15s).' });
-    // ABCD creative framework, one check per letter
     var ads = [];
-    (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { ads.push(a); }); });
+    (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { ads.push(a); checks.push(M.videoAdCheck(a, subKey, c.videoSurfaces)); }); });
+    var errs = checks.filter(function (x) { return !x.valid; });
+    var used = U.uniq([].concat.apply([], checks.map(function (x) { return x.formats; })));
+    ck({ id: 'vlen', cat: 'Ads & creative', guide: 'VID-2', weight: 5, status: !checks.length || errs.length === checks.length ? 'fail' : errs.length ? 'warn' : 'pass', title: 'Video ads fit the subtype\'s formats',
+      detail: errs.length ? errs[0].errors.join('; ') + '.' : checks.length ? 'Your ads can run as: ' + used.map(function (f) { return D.VIDEO_FORMATS[f].name; }).join(', ') + '.' + (used.length < subFormats.length ? ' Not used: ' + subFormats.filter(function (f) { return used.indexOf(f) < 0; }).map(function (f) { return D.VIDEO_FORMATS[f].name; }).join(', ') + '.' : '') : 'No video ads.',
+      fix: 'Bumper ads need a video of 6 seconds or less; non-skippable 15 seconds or less; audio 30 seconds or less. Add short cuts of your video to use every format.' });
+    if (subKey === 'sequence') {
+      var shortSeq = (c.adGroups || []).filter(function (g) { return (g.ads || []).length < 2; });
+      ck({ id: 'vseq', cat: 'Ads & creative', guide: 'VID-4', weight: 3, status: shortSeq.length ? 'fail' : 'pass', title: 'Ad sequence has 2 or more steps', detail: shortSeq.length ? 'Ad group(s) with a single ad: ' + shortSeq.map(function (g) { return '"' + g.name + '"'; }).join(', ') + '.' : 'Each ad group tells a story in steps.', fix: 'Add 2–5 ads in order: for example, introduce (bumper), explain (skippable), remind with an offer (bumper).' });
+    }
+    if (subKey === 'audio') {
+      var noVoice = ads.filter(function (a) { return !a.brandAudio; }).length;
+      ck({ id: 'vaudio', cat: 'Ads & creative', guide: 'VID-5', weight: 3, status: noVoice ? 'fail' : 'pass', title: 'Audio ads say the brand out loud', detail: noVoice ? noVoice + ' audio ad(s) do not mention the brand in the voiceover.' : 'The brand is in the voiceover.', fix: 'People are listening, not watching: say the brand name early and repeat it at the end.' });
+    }
+    // ABCD creative framework, one check per letter (audio ads skip the visual items)
+    var audio = subKey === 'audio';
     D.ABCD.forEach(function (L) {
-      var items = L.items.filter(function (it) { return !(it[0] === 'headline' && format === 'bumper'); });
+      var items = L.items.filter(function (it) { return !(audio && ['pacing', 'people', 'productDemo', 'captions'].indexOf(it[0]) >= 0) && !(it[0] === 'headline' && used.length === 1 && used[0] === 'bumper'); });
+      if (!items.length) return;
       var missing = [];
       ads.forEach(function (a) { items.forEach(function (it) { if (!a[it[0]] && missing.indexOf(it[1]) < 0) missing.push(it[1]); }); });
       var have = ads.length ? 1 - missing.length / items.length : 0;
       ck({ id: 'abcd-' + L.key, cat: 'Ads & creative', guide: 'VID-5', weight: L.key === 'A' || L.key === 'B' ? 3 : 2, status: !missing.length && ads.length ? 'pass' : have >= 0.5 ? 'warn' : 'fail',
-        title: 'Creative · ' + L.key + ' = ' + L.name, detail: missing.length ? 'Missing: ' + missing.join('; ') + '.' : 'Covered.', fix: L.items.map(function (it) { return it[1] + ' (' + it[2].toLowerCase() + ')'; }).join('; ') + '.' });
+        title: 'Creative · ' + L.key + ' = ' + L.name, detail: missing.length ? 'Missing: ' + missing.join('; ') + '.' : 'Covered.', fix: items.map(function (it) { return it[1] + ' (' + it[2].toLowerCase() + ')'; }).join('; ') + '.' });
     });
     // placements
     var chosen = (c.videoSurfaces || []).filter(function (k) { return D.YT_SURFACES[k]; });
-    var okFor = chosen.filter(function (k) { return D.YT_SURFACES[k].formats.indexOf(format) >= 0; });
-    var wrong = chosen.filter(function (k) { return okFor.indexOf(k) < 0; });
-    ck({ id: 'vplace', cat: 'Keywords & targeting', guide: 'VID-6', weight: 3, status: !okFor.length ? 'fail' : wrong.length ? 'warn' : 'pass', title: 'Placements accept this video format',
-      detail: !chosen.length ? 'No placements selected.' : !okFor.length ? 'None of the selected placements show ' + D.VIDEO_FORMATS[format].name + ' ads.' : wrong.length ? D.VIDEO_FORMATS[format].name + ' ads cannot run on: ' + wrong.map(function (k) { return D.YT_SURFACES[k].name; }).join(', ') + '.' : 'Running on: ' + okFor.map(function (k) { return D.YT_SURFACES[k].short; }).join(', ') + '.',
-      fix: 'In-stream formats run on YouTube videos, TV screens and partners; in-feed runs in feeds and YouTube search; Shorts runs in the Shorts feed.' });
-    var goalSales = state.account.goal === 'sales' || state.account.goal === 'leads';
+    var shows = function (k) { return subFormats.some(function (f) { return D.YT_SURFACES[k].formats.indexOf(f) >= 0; }); };
+    var okFor = chosen.filter(shows);
+    var wrong = chosen.filter(function (k) { return !shows(k); });
+    ck({ id: 'vplace', cat: 'Keywords & targeting', guide: 'VID-6', weight: 3, status: !okFor.length ? 'fail' : wrong.length ? 'warn' : 'pass', title: 'Placements show this subtype\'s formats',
+      detail: !chosen.length ? 'No placements selected.' : !okFor.length ? 'None of the selected placements show ' + sub.name + ' ads.' : wrong.length ? sub.name + ' cannot run on: ' + wrong.map(function (k) { return D.YT_SURFACES[k].name; }).join(', ') + '.' : 'Running on: ' + okFor.map(function (k) { return D.YT_SURFACES[k].short; }).join(', ') + '.',
+      fix: 'In-stream formats run on YouTube videos, TV screens and partners; in-feed runs in feeds and YouTube search; Shorts runs in the Shorts feed; audio runs where people listen.' });
+    var goalSales = goal === 'sales' || goal === 'leads';
     var vertical = ads.some(function (a) { return a.aspect === '9:16'; });
     var concerns = [];
     if (goalSales && okFor.indexOf('ctv') >= 0) concerns.push('TV screens rarely drive clicks or sales (keep them for awareness)');
     if (goalSales && okFor.indexOf('partners') >= 0) concerns.push('Google video partners bring cheaper, lower-quality views');
-    if (okFor.indexOf('shorts') >= 0 && !vertical) concerns.push('Shorts is selected but the video is not vertical (9:16)');
+    if (okFor.indexOf('shorts') >= 0 && used.indexOf('shorts') >= 0 && !vertical) concerns.push('Shorts is selected but the video is not vertical (9:16)');
     ck({ id: 'vplacegoal', cat: 'Strategy & structure', guide: 'VID-6', weight: 2, status: concerns.length ? 'warn' : 'pass', title: 'Placements fit the goal and the creative', detail: concerns.length ? concerns.join('; ') + '.' : 'Placements match the goal and the creative.', fix: 'Turn off placements that do not serve your goal, or add a vertical version for Shorts.' });
     var inv = c.inventory || 'standard';
     ck({ id: 'vinv', cat: 'Strategy & structure', guide: 'VID-6', weight: 1, status: inv === 'expanded' ? 'warn' : 'pass', title: 'Brand-safe inventory type', detail: D.INVENTORY_TYPES[inv].name + ': ' + D.INVENTORY_TYPES[inv].desc, fix: 'Use Standard inventory unless you have a reason to accept sensitive content.' });
-    var goal = state.account.goal;
-    var fitOk = goal === 'awareness' ? ['bumper', 'nonskip', 'shorts'].indexOf(format) >= 0 || c.bidStrategy === 'target_cpm'
-      : goal === 'consideration' || goal === 'traffic' ? ['skippable', 'infeed'].indexOf(format) >= 0
-        : format === 'skippable';
-    ck({ id: 'vfit', cat: 'Strategy & structure', guide: 'VID-4', weight: 3, status: fitOk ? 'pass' : 'warn', title: 'Video format fits the goal', detail: D.VIDEO_FORMATS[format].name + ' for a ' + D.GOALS[goal].name + ' goal.', fix: 'Awareness → bumper/non-skippable (Target CPM); consideration → skippable/in-feed (Max CPV); action → skippable with conversion bidding.' });
     lpCheck(c, ck, state);
   }
 

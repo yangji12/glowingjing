@@ -194,6 +194,12 @@
         return [c.name, int(c.views), pct(c.viewRate, 1), money(c.cpv), int(c.reach), (c.frequency || 0).toFixed(1), '+' + (c.adRecallLift || 0).toFixed(1) + ' pts'];
       }));
     }
+    var vcs = r.campaigns.filter(function (c) { return c.type === 'video' && !c.errors.length; });
+    if (vcs.length) {
+      table(['Video campaign', 'Subtype', 'Formats served', 'Engagements', 'Subscribers'], vcs.map(function (c) {
+        return [c.name, (D.VIDEO_SUBTYPES[c.subtype] || {}).name || '-', (c.formats || []).map(function (f) { return D.VIDEO_FORMATS[f].name; }).join(', '), int(c.engagements), int(c.subscribers)];
+      }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5 } });
+    }
     var yts = (r.videoSurfaces || []).filter(function (v) { return v.impressions > 0; });
     if (yts.length) {
       table(['YouTube placement', 'Campaign', 'Impr.', 'Views', 'View rate', 'Cost', 'Clicks', 'Conv.', 'Ad recall lift'], yts.map(function (v) {

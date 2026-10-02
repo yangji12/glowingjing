@@ -496,8 +496,30 @@
     }).join('');
     return '<div class="card new-camp"><h3>New campaign</h3><p class="lbl">1 · What is this campaign\'s objective?</p><div class="picks">' + goals + '</div>' +
       '<p class="lbl">2 · Choose a campaign type ' + guideLink('ACC-3') + '</p><div class="picks types">' + types + '</div>' +
+      (nc.type === 'video' ? '<p class="lbl">3 · Select a campaign subtype ' + guideLink('VID-4') + '</p>' + subtypePicker(nc.subtype || 'views', 'pickSubtype', nc.goal) : '') +
       (nc.type === 'shopping' && !S.products.length ? '<p class="warn-text">Shopping needs a product feed — add products in Product feed.</p>' : '') +
       '<div class="row">' + btn('Create campaign', 'createCampaign', null, 'primary' + (nc.type ? '' : ' disabled')) + btn('Cancel', 'cancelNew', null, 'ghost') + '</div></div>';
+  }
+
+  // Video campaign subtypes, grouped as in Google Ads
+  function subtypePicker(current, action, goal) {
+    var groups = [];
+    Object.keys(D.VIDEO_SUBTYPES).forEach(function (k) {
+      var st = D.VIDEO_SUBTYPES[k];
+      var g = groups.find(function (x) { return x.name === st.group; });
+      if (!g) { g = { name: st.group, items: [] }; groups.push(g); }
+      g.items.push(k);
+    });
+    return '<div class="subtypes">' + groups.map(function (g) {
+      return '<div class="subtype-group">' + (g.items.length > 1 ? '<div class="subtype-group-name">' + esc(g.name) + '</div>' : '') + g.items.map(function (k) {
+        var st = D.VIDEO_SUBTYPES[k];
+        var fits = goal && st.goals.indexOf(goal) >= 0;
+        return '<button type="button" class="pick subtype' + (current === k ? ' sel' : '') + '" data-action="' + action + '" data-args="' + esc(JSON.stringify(k)) + '">' +
+          '<span class="radio-dot"></span><span><b>' + esc(st.name) + '</b>' + (st.isNew ? ' <span class="chip info">New</span>' : '') + (fits ? ' <span class="chip good">Fits your goal</span>' : '') +
+          '<small>' + esc(st.desc) + '</small><small class="subtype-meta">Formats: ' + Object.keys(st.formats).map(function (f) { return D.VIDEO_FORMATS[f].name; }).join(', ') +
+          ' · Bidding: ' + st.bids.map(function (b) { return D.BID_STRATEGIES[b].name; }).join(', ') + '</small></span></button>';
+      }).join('') + '</div>';
+    }).join('') + '</div>';
   }
 
   // ----- Campaign editor -----
@@ -541,7 +563,7 @@
 
   function campaignSettings(c, base) {
     var ind = industry();
-    var strategies = Object.keys(D.BID_STRATEGIES).filter(function (k) { return D.BID_STRATEGIES[k].types.indexOf(c.type) >= 0; });
+    var strategies = c.type === 'video' ? D.VIDEO_SUBTYPES[M.videoSubtype(c)].bids.slice() : Object.keys(D.BID_STRATEGIES).filter(function (k) { return D.BID_STRATEGIES[k].types.indexOf(c.type) >= 0; });
     var bs = D.BID_STRATEGIES[c.bidStrategy] || {};
     var recBudget = c.type === 'search' || c.type === 'shopping' ? 10 * ind[c.type === 'shopping' ? 'shopping' : 'search'].cpc : 15;
     var extra = '';
@@ -551,13 +573,15 @@
     if (c.bidStrategy === 'target_roas') extra = field('Target ROAS (%)', input(base + '.targetRoas', { type: 'number', step: 10, min: 0 }), 'Break-even ROAS: ' + Math.round(100 / (S.account.margin || 0.4)) + '%. ' + guideLink('BID-3'));
     if (c.bidStrategy === 'target_is') extra = field('Target impression share (%) at the top of the page', input(base + '.targetIs', { type: 'number', step: 5, min: 5, maxVal: 95 })) + field('Max CPC limit ($)', input(base + '.maxCpc', { type: 'number', step: 0.05, min: 0 }));
     if (c.bidStrategy === 'max_cpv') extra = field('Maximum CPV ($ per view)', input(base + '.maxCpv', { type: 'number', step: 0.01, min: 0 }), 'Industry average CPV ≈ ' + fMoney(ind.video.cpv) + '.');
+    if (c.bidStrategy === 'target_cpv') extra = field('Target CPV ($ average per view)', input(base + '.targetCpv', { type: 'number', step: 0.01, min: 0 }), 'Industry average CPV ≈ ' + fMoney(ind.video.cpv) + '.');
+    if (c.type === 'video' && M.videoSubtype(c) === 'targetFrequency') extra += field('Frequency goal (times per person per week)', select(base + '.freqGoal', [[1, '1 time per week'], [2, '2 times per week'], [3, '3 times per week'], [4, '4 times per week']], { type: 'number' }), 'Two or three a week is usually enough to be remembered without annoying people.');
     if (c.bidStrategy === 'target_cpm' || c.bidStrategy === 'vcpm') extra = field((c.bidStrategy === 'vcpm' ? 'Viewable CPM' : 'Target CPM') + ' ($ per 1,000 impressions)', input(base + '.targetCpm', { type: 'number', step: 0.5, min: 0 }));
     var locs = D.LOCATIONS.map(function (l) { return arrayCheck(base + '.locations', l.id, esc(l.name)); }).join('');
     var h = '<div class="card"><h3>Campaign basics</h3><div class="grid2">' +
       field('Campaign name', input(base + '.name', { aria: 'Campaign name' })) +
       field('Status', select(base + '.status', [['enabled', 'Enabled'], ['paused', 'Paused']])) +
       field('Average daily budget ($)', input(base + '.dailyBudget', { type: 'number', step: 1, min: 0 }), 'Monthly spend ≈ 30.4 × daily budget = ' + fMoney0(c.dailyBudget * 30.4) + '. Recommended ≥ ' + fMoney0(recBudget) + '/day. ' + guideLink('STR-3')) +
-      (c.type === 'video' ? field('Video ad format', select(base + '.videoFormat', Object.keys(D.VIDEO_FORMATS).map(function (k) { return [k, D.VIDEO_FORMATS[k].name]; })), esc(D.VIDEO_FORMATS[c.videoFormat || 'skippable'].desc) + ' ' + guideLink('VID-4')) : '') +
+      (c.type === 'video' ? '<div class="field span2"><label class="lbl">Campaign subtype ' + guideLink('VID-4') + '</label>' + subtypePicker(M.videoSubtype(c), 'setSubtype', S.account.goal) + '</div>' : '') +
       (c.type === 'shopping' ? field('Campaign priority', select(base + '.priority', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']]), 'Used when several Shopping campaigns advertise the same product.') : '') +
       '</div></div>';
     h += '<div class="card"><h3>Bidding ' + guideLink('BID-1') + '</h3>' + field('Bid strategy', select(base + '.bidStrategy', strategies.map(function (k) { return [k, D.BID_STRATEGIES[k].name]; })), esc(bs.desc || '') + (bs.needsConv && !S.account.conversionTracking ? ' <b class="warn-text">Needs conversion tracking (currently off).</b>' : '')) + extra + '</div>';
@@ -570,11 +594,10 @@
         field('Frequency cap (impressions per user per day, 0 = none)', input(base + '.freqCap', { type: 'number', step: 1, min: 0 })) + '</div>';
     }
     if (c.type === 'video') {
-      var fmt = c.videoFormat || 'skippable';
-      h += '<div class="card"><h3>Where your video ads show ' + guideLink('VID-6') + '</h3><p class="help">Each placement reaches people in a different moment. Your format (' + esc(D.VIDEO_FORMATS[fmt].name) + ') can only run where it is marked as available.</p>' +
+      h += '<div class="card"><h3>Where your video ads show ' + guideLink('VID-6') + '</h3><p class="help">Each placement reaches people in a different moment. ' + esc(D.VIDEO_SUBTYPES[M.videoSubtype(c)].name) + ' ads can only run where marked as available.</p>' +
         Object.keys(D.YT_SURFACES).map(function (k) {
           var sf = D.YT_SURFACES[k];
-          var ok = sf.formats.indexOf(fmt) >= 0;
+          var ok = Object.keys(D.VIDEO_SUBTYPES[M.videoSubtype(c)].formats).some(function (f) { return sf.formats.indexOf(f) >= 0; });
           return arrayCheck(base + '.videoSurfaces', k, '<b>' + esc(sf.name) + '</b>', ' ' + (ok ? '<span class="chip good">Available</span>' : '<span class="chip neutral">Not for this format</span>') + '<small>' + esc(sf.desc) + '</small>');
         }).join('') +
         '<p class="lbl">Inventory type (brand safety)</p>' + Object.keys(D.INVENTORY_TYPES).map(function (k) { var it = D.INVENTORY_TYPES[k]; return radio(base + '.inventory', k, esc(it.name), esc(it.desc)); }).join('') +
@@ -779,39 +802,53 @@
     return h;
   }
 
-  function abcdPanel(ad, format) {
+  function abcdPanel(ad) {
     var cr = M.videoCreative(ad);
     return '<div class="abcd-score">' + cr.parts.map(function (p) {
       return barRow('<b>' + p.key + '</b> ' + esc(p.name), p.have, p.total, p.have + '/' + p.total, p.have === p.total ? 'good' : p.have ? 'warning' : 'critical');
     }).join('') + '<p class="muted">Creative score ' + Math.round(cr.score * 100) + '/100: drives view rate, clicks, conversions and ad recall in the simulation.</p></div>';
   }
 
+  // formats this ad can run as in its campaign's subtype (by video length)
+  function adFormats(c, ad) {
+    return M.videoAdCheck(ad, M.videoSubtype(c), c.videoSurfaces).formats;
+  }
+
   function videoContexts(c, ad, path) {
-    var format = c.videoFormat || 'skippable';
-    var ids = YT.contextsFor(format, c.videoSurfaces);
-    if (!ids.length) return '<p class="muted">No placement selected that shows this format. Choose placements in Settings.</p>';
-    return '<div class="ytm-gallery">' + ids.map(function (id) { return YT.thumbnail(id, ad, S.account, format, S, { videoSrc: UI.videoFiles[path] }, 520); }).join('') + '</div>';
+    var formats = adFormats(c, ad);
+    if (!formats.length) return '<p class="muted">This video is too long for ' + esc(D.VIDEO_SUBTYPES[M.videoSubtype(c)].name) + '. Shorten it to see previews.</p>';
+    var ids = YT.contextsFor(formats, c.videoSurfaces);
+    if (!ids.length) return '<p class="muted">No selected placement shows these formats. Choose placements in Settings.</p>';
+    return '<div class="ytm-gallery">' + ids.map(function (id) { return YT.thumbnail(id, ad, S.account, formats, S, { videoSrc: UI.videoFiles[path] }, 520); }).join('') + '</div>';
   }
 
   function videoAds(c, base) {
-    var format = c.videoFormat || 'skippable';
+    var subKey = M.videoSubtype(c);
+    var sub = D.VIDEO_SUBTYPES[subKey];
     var surfaces = c.videoSurfaces || [];
-    var onShorts = format === 'shorts' || surfaces.indexOf('shorts') >= 0;
-    var h = '<div class="card info-card">Format: <b>' + esc(D.VIDEO_FORMATS[format].name) + '</b>. ' + esc(D.VIDEO_FORMATS[format].desc) + ' Change the format and placements in Settings. ' + guideLink('VID-2') + ' ' + guideLink('VID-5') + '</div>';
+    var onShorts = sub.formats.shorts && surfaces.indexOf('shorts') >= 0;
+    var audio = subKey === 'audio';
+    var seq = subKey === 'sequence';
+    var h = '<div class="card info-card"><b>' + esc(sub.name) + '</b> serves your ads as: ' + Object.keys(sub.formats).map(function (f) { return D.VIDEO_FORMATS[f].name + (D.VIDEO_FORMATS[f].maxLen ? ' (≤' + D.VIDEO_FORMATS[f].maxLen + 's)' : ''); }).join(', ') +
+      '. Google picks the format by each video\'s length, so add short cuts (6s, 15s) to use them all. ' + (seq ? '<b>Each ad below is one step of the sequence, shown to each viewer in this order.</b> ' : '') + (audio ? '<b>Audio ads are heard, not watched: the voiceover carries the message; the image is a still.</b> ' : '') +
+      'Change the subtype and placements in Settings. ' + guideLink('VID-4') + ' ' + guideLink('VID-5') + '</div>';
     (c.adGroups || []).forEach(function (g, gi) {
       (g.ads || []).forEach(function (ad, ai) {
         var ab = base + '.adGroups.' + gi + '.ads.' + ai;
         var abcd = D.ABCD.map(function (L) {
           return '<div class="abcd"><div class="abcd-head"><span class="abcd-letter">' + L.key + '</span> ' + esc(L.name) + '</div>' +
-            L.items.filter(function (it) { return it[0] !== 'cta' && it[0] !== 'headline'; }).map(function (it) { return checkbox(ab + '.' + it[0], esc(it[1]), esc(it[2])); }).join('') +
+            L.items.filter(function (it) { return it[0] !== 'cta' && it[0] !== 'headline' && !(audio && ['pacing', 'people', 'productDemo', 'captions'].indexOf(it[0]) >= 0); }).map(function (it) { return checkbox(ab + '.' + it[0], esc(it[1]), esc(it[2])); }).join('') +
             (L.key === 'D' ? '<div class="grid2">' + field('CTA button text', input(ab + '.cta', { max: 10 })) + field('Headline', input(ab + '.headline', { max: 30, policy: 'headline' })) + '</div>' : '') + '</div>';
         }).join('');
-        h += '<div class="card"><div class="card-head"><h3>' + esc(g.name) + ' · Video ad ' + (ai + 1) + '</h3>' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + (g.ads.length > 1 ? btn('Remove ad', 'removeAd', [c.id, g.id, ai], 'small ghost danger') : '') + '</div><div class="ad-editor"><div>' +
+        var fits = adFormats(c, ad);
+        var fmtChips = '<div class="fmt-chips">' + Object.keys(sub.formats).map(function (f) { var ok = fits.indexOf(f) >= 0; return '<span class="chip ' + (ok ? 'good' : 'neutral') + '">' + (ok ? '✓ ' : '✕ ') + esc(D.VIDEO_FORMATS[f].name) + '</span>'; }).join('') + '</div>';
+        h += '<div class="card"><div class="card-head"><h3>' + esc(g.name) + ' · ' + (seq ? 'Step ' + (ai + 1) : audio ? 'Audio ad ' + (ai + 1) : 'Video ad ' + (ai + 1)) + '</h3>' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + (g.ads.length > 1 ? btn('Remove ad', 'removeAd', [c.id, g.id, ai], 'small ghost danger') : '') + '</div><div class="ad-editor"><div>' +
           '<p class="lbl">Your video</p>' +
           '<div class="row wrap"><label class="btn small">🎬 Preview a video file<input type="file" accept="video/*" data-video-file="' + esc(ab) + '" hidden></label>' +
           (UI.videoFiles[ab] ? '<span class="good-text">✓ Playing in the previews (this browser session only)</span>' + btn('Remove', 'clearVideoFile', ab, 'small ghost danger') : '<span class="muted">Plays inside the mock-ups; not saved or uploaded.</span>') + '</div>' +
           field('YouTube video link (optional)', input(ab + '.videoUrl', { placeholder: 'https://www.youtube.com/watch?v=…' }), 'In Google Ads your video must be on YouTube. Here the link is for your records.') +
-          '<div class="grid2">' + field('Video length (seconds)', input(ab + '.length', { type: 'number', min: 1, step: 1 })) + field('Aspect ratio', select(ab + '.aspect', [['16:9', '16:9 horizontal'], ['9:16', '9:16 vertical (Shorts)'], ['1:1', '1:1 square']])) + '</div>' +
+          '<div class="grid2">' + field((audio ? 'Audio' : 'Video') + ' length (seconds)', input(ab + '.length', { type: 'number', min: 1, step: 1, rerender: true })) + (audio ? '<div></div>' : field('Aspect ratio', select(ab + '.aspect', [['16:9', '16:9 horizontal'], ['9:16', '9:16 vertical (Shorts)'], ['1:1', '1:1 square']]))) + '</div>' +
+          '<p class="lbl">Runs as</p>' + fmtChips +
           imageField(ab + '.thumbnail', 'thumb') + (onShorts || ad.aspect === '9:16' ? imageField(ab + '.verticalThumb', 'vthumb') : '') +
           '<p class="lbl">Creative checklist: ABCD ' + guideLink('VID-5') + '</p>' + abcd +
           field('Long headline (companion banner, feeds)', input(ab + '.longHeadline', { max: 90 })) +
@@ -819,12 +856,12 @@
           field('Final URL', input(ab + '.finalUrl', { inputType: 'url' })) +
           checkbox(ab + '.companion', 'Companion banner next to the player (desktop)') +
           '</div><div class="ad-side">' + live('str-' + g.id + '-' + ai, function () {
-            var v = M.videoAdCheck(ad, format, surfaces);
-            return strengthMeter({ label: v.label === 'Not eligible' ? 'Incomplete' : v.label, issues: v.issues.slice(0, 6), errors: v.errors }) + abcdPanel(ad, format);
+            var v = M.videoAdCheck(ad, subKey, surfaces);
+            return strengthMeter({ label: v.label === 'Not eligible' ? 'Incomplete' : v.label, issues: v.issues.slice(0, 6), errors: v.errors }) + abcdPanel(ad);
           }) +
           '<p class="lbl">Where it shows (mock-ups)</p>' + live('prev-' + g.id + '-' + ai, function () { return videoContexts(c, ad, ab); }) + '</div></div></div>';
       });
-      if ((g.ads || []).length < 3) h += btn('＋ Add another video ad to ' + esc(g.name), 'addAd', [c.id, g.id], 'ghost');
+      if ((g.ads || []).length < (seq ? 5 : 3)) h += btn(seq ? '＋ Add step ' + ((g.ads || []).length + 1) + ' to the sequence' : '＋ Add another ' + (audio ? 'audio' : 'video') + ' ad to ' + esc(g.name), 'addAd', [c.id, g.id], 'ghost');
     });
     return h;
   }
@@ -995,13 +1032,18 @@
       ])), r.campaigns, { totals: Object.assign({ name: '<b>Total</b>' }, totalsRow) });
       var vids = r.campaigns.filter(function (c) { return c.type === 'video' && !c.errors.length; });
       if (vids.length) body += '<h3 class="section">Video metrics</h3>' + dataTable('rep-video', [
-        { key: 'name', label: 'Campaign' }, { key: 'format', label: 'Format', fmt: function (x) { return esc(D.VIDEO_FORMATS[x.format].name); } },
+        { key: 'name', label: 'Campaign' },
+        { key: 'subtype', label: 'Subtype', fmt: function (x) { return esc((D.VIDEO_SUBTYPES[x.subtype] || {}).name || '—'); } },
+        { key: 'formats', label: 'Formats served', fmt: function (x) { return esc((x.formats || [x.format]).map(function (f) { return D.VIDEO_FORMATS[f].name; }).join(', ')); } },
         { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } }, { key: 'views', label: 'Views', num: true, fmt: function (x) { return fInt(x.views); } },
         { key: 'viewRate', label: 'View rate', num: true, fmt: function (x) { return fPct(x.viewRate, 1); } }, { key: 'cpv', label: 'Avg. CPV', num: true, fmt: function (x) { return fMoney(x.cpv); } },
         { key: 'cpm', label: 'Avg. CPM', num: true, fmt: function (x) { return fMoney(x.cpm); } }, { key: 'reach', label: 'Unique reach', num: true, fmt: function (x) { return fInt(x.reach); } },
         { key: 'frequency', label: 'Avg. frequency', num: true, fmt: function (x) { return fNum(x.frequency); } }, { key: 'earnedViews', label: 'Earned views', num: true, fmt: function (x) { return fInt(x.earnedViews); } },
         { key: 'adRecallLift', label: 'Ad recall lift (est.)', num: true, fmt: function (x) { return '+' + fNum(x.adRecallLift) + ' pts'; } },
-        { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } }, { key: 'viewThrough', label: 'Engaged-view conv.', num: true, fmt: function (x) { return convCell(r, x.viewThrough); } }
+        { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } }, { key: 'viewThrough', label: 'Engaged-view conv.', num: true, fmt: function (x) { return convCell(r, x.viewThrough); } },
+        { key: 'engagements', label: 'Engagements', num: true, title: 'Likes, shares, comments and channel visits', fmt: function (x) { return fInt(x.engagements); } },
+        { key: 'subscribers', label: 'Subscribers', num: true, fmt: function (x) { return fInt(x.subscribers); } },
+        { key: 'weeklyFrequency', label: 'Weekly frequency', num: true, fmt: function (x) { return x.freqGoal ? fNum(x.weeklyFrequency) + ' (goal ' + x.freqGoal + ')' : fNum((x.frequency || 0) / 4.3); } }
       ], vids);
       var disp = r.campaigns.filter(function (c) { return c.type === 'display' && !c.errors.length; });
       if (disp.length) body += '<h3 class="section">Display reach</h3>' + dataTable('rep-display', [
@@ -1110,6 +1152,16 @@
           { key: 'frequency', label: 'Frequency', num: true, fmt: function (x) { return fNum(x.frequency); } },
           { key: 'adRecallLift', label: 'Ad recall lift', num: true, fmt: function (x) { return '+' + fNum(x.adRecallLift) + ' pts'; } }
         ], vs, { empty: 'No YouTube campaigns ran this round.' }) +
+        '<h3 class="section">Results by format</h3>' + dataTable('rep-yt-fmt', [
+          { key: 'name', label: 'Format', fmt: function (x) { return '<b>' + esc(x.name) + '</b>'; } }, { key: 'campaign', label: 'Campaign' },
+          { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
+          { key: 'views', label: 'Views', num: true, fmt: function (x) { return fInt(x.views); } },
+          { key: 'viewRate', label: 'View rate', num: true, fmt: function (x) { return fPct(x.viewRate, 1); } },
+          { key: 'cpm', label: 'Avg. CPM', num: true, fmt: function (x) { return fMoney(x.cpm); } },
+          { key: 'cost', label: 'Cost', num: true, fmt: function (x) { return fMoney(x.cost); } },
+          { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+          { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions); } }
+        ], r.videoFormats || [], { empty: 'No YouTube campaigns ran this round.' }) +
         '<h3 class="section">Channels and sites</h3>' + dataTable('rep-yt-pl', [
           { key: 'placement', label: 'Where it showed' }, { key: 'campaign', label: 'Campaign' },
           { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
@@ -1220,8 +1272,8 @@
     return out;
   }
 
-  function stimContexts(c) {
-    if (c.type === 'video') return YT.contextsFor(c.videoFormat || 'skippable', c.videoSurfaces).map(function (id) { return [id, YT.CONTEXTS[id].label]; });
+  function stimContexts(c, ad) {
+    if (c.type === 'video') return ad ? YT.contextsFor(adFormats(c, ad), c.videoSurfaces).map(function (id) { return [id, YT.CONTEXTS[id].label + ' · ' + D.VIDEO_FORMATS[YT.formatFor(id, adFormats(c, ad))].name]; }) : [];
     if (c.type === 'search') return [['serp-desktop', 'Search results · desktop'], ['serp-mobile', 'Search results · mobile']];
     if (c.type === 'display') return [['site-desktop', 'News article · desktop'], ['site-mobile', 'News article · mobile']].concat(
       P.displayFormats({}, S.account, 0).map(function (f, i) { return ['fmt-' + i, f.label + ' (ad only)']; }));
@@ -1243,7 +1295,7 @@
     if (c.type === 'video') {
       var path = 'campaigns.' + campIndex(c.id) + '.adGroups.' + c.adGroups.indexOf(g) + '.ads.' + st.ai;
       var cx = YT.CONTEXTS[ctx];
-      return { w: cx.w, h: cx.h, html: YT.render(ctx, ad, acc, c.videoFormat || 'skippable', S, { skipState: st.skip, videoSrc: UI.videoFiles[path] }) };
+      return { w: cx.w, h: cx.h, html: YT.render(ctx, ad, acc, adFormats(c, ad), S, { skipState: st.skip, videoSrc: UI.videoFiles[path] }) };
     }
     var mobile = /mobile/.test(ctx);
     var W = mobile ? 390 : 1280, H = mobile ? 844 : 800;
@@ -1273,14 +1325,16 @@
     if (!st) { box.hidden = true; return; }
     var c = campById(st.cid);
     if (!c) { UI.stim = null; box.hidden = true; return; }
-    var ctxs = stimContexts(c);
+    var stG = st.gid ? (c.adGroups || []).find(function (x) { return x.id === st.gid; }) : null;
+    var stAd = stG ? stG.ads[st.ai] : null;
+    var ctxs = stimContexts(c, stAd);
     if (!ctxs.some(function (x) { return x[0] === st.context; })) st.context = ctxs.length ? ctxs[0][0] : null;
     var ads = allAds();
     var key = st.cid + '|' + (st.gid || '') + '|' + st.ai;
     var panel = '<h3>Stimulus view</h3><p class="help">A full-size mock-up of one ad in one context. Keep everything else identical across conditions and change one variable at a time.</p>' +
       field('Ad', '<select data-stim="ad" id="stim-ad">' + ads.map(function (x) { var k = x.c.id + '|' + (x.g ? x.g.id : '') + '|' + x.ai; return '<option value="' + esc(k) + '"' + (k === key ? ' selected' : '') + '>' + esc(x.label) + '</option>'; }).join('') + '</select>') +
       (ctxs.length ? field('Context', '<select data-stim="context" id="stim-context">' + ctxs.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === st.context ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>') : '<p class="bad-text">This ad has no placement to show in. Choose placements in the campaign settings.</p>') +
-      (c.type === 'video' && (c.videoFormat || 'skippable') === 'skippable' ? field('Skip button', '<select data-stim="skip" id="stim-skip"><option value="counting"' + (st.skip === 'counting' ? ' selected' : '') + '>Counting down (first 5 seconds)</option><option value="skippable"' + (st.skip === 'skippable' ? ' selected' : '') + '>Skippable</option></select>') : '') +
+      (c.type === 'video' && stAd && st.context && YT.formatFor(st.context, adFormats(c, stAd)) === 'skippable' ? field('Skip button', '<select data-stim="skip" id="stim-skip"><option value="counting"' + (st.skip === 'counting' ? ' selected' : '') + '>Counting down (first 5 seconds)</option><option value="skippable"' + (st.skip === 'skippable' ? ' selected' : '') + '>Skippable</option></select>') : '') +
       (c.type === 'search' || c.type === 'display' ? '<div>' + btn('🔀 Another asset combination', 'stimShuffle', null, 'small') + '</div>' : '') +
       '<div class="row wrap">' + btn('⬇ Download PNG', 'stimDownload', null, 'primary') + btn('Close', 'stimClose', null, 'ghost') + '</div>' +
       '<p class="help">The PNG is rendered at 2× resolution. Images from other websites cannot be included; upload images instead.</p>';
@@ -1459,11 +1513,20 @@
     },
     pickGoal: function (el, g) { UI.newCamp.goal = g; render(true); },
     pickType: function (el, t) { UI.newCamp.type = t; render(true); },
+    pickSubtype: function (el, k) { UI.newCamp.subtype = k; render(true); },
+    setSubtype: function (el, k) {
+      var c = campById(UI.params[0]);
+      c.videoSubtype = k;
+      var sub = D.VIDEO_SUBTYPES[k];
+      if (sub.bids.indexOf(c.bidStrategy) < 0) { c.bidStrategy = sub.bids[0]; toast(sub.name + ' uses ' + D.BID_STRATEGIES[c.bidStrategy].name + ': bid strategy updated.'); }
+      save(); render(true);
+    },
     cancelNew: function () { UI.newCamp = null; render(); },
     createCampaign: function () {
       var nc = UI.newCamp;
       if (!nc || !nc.type) { toast('Choose a campaign type.'); return; }
       var c = M.newCampaign(nc.type, S, nc.goal);
+      if (nc.type === 'video') { c.videoSubtype = nc.subtype || 'views'; c.bidStrategy = D.VIDEO_SUBTYPES[c.videoSubtype].bids[0]; c.name = D.VIDEO_SUBTYPES[c.videoSubtype].name + ' campaign ' + (S.campaigns.filter(function (x) { return x.type === 'video'; }).length + 1); }
       S.campaigns.push(c);
       UI.newCamp = null;
       save();
@@ -1705,14 +1768,6 @@
     if (!el.dataset.bind) return;
     if (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT' || el.type === 'color') {
       applyBind(el);
-      if (/\.videoFormat$/.test(el.dataset.bind)) {
-        // keep the bid strategy valid for how the new format is sold
-        var vc = getPath(S, el.dataset.bind.replace(/\.videoFormat$/, ''));
-        var vf2 = D.VIDEO_FORMATS[vc.videoFormat];
-        if (vf2.billing === 'cpm' && vc.bidStrategy === 'max_cpv') { vc.bidStrategy = 'target_cpm'; toast(vf2.name + ' ads are bought per 1,000 impressions: bid strategy switched to Target CPM.'); }
-        if (vc.videoFormat !== 'skippable' && E.SMART.indexOf(vc.bidStrategy) >= 0) { vc.bidStrategy = vf2.billing === 'cpm' ? 'target_cpm' : 'max_cpv'; toast('Conversion bidding needs skippable ads: bid strategy switched to ' + D.BID_STRATEGIES[vc.bidStrategy].name + '.'); }
-        if (vc.videoFormat === 'shorts') (vc.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (a) { if (a.aspect === '16:9') a.aspect = '9:16'; }); });
-      }
       if (el.dataset.bind === 'account.industry') {
         var ind = D.INDUSTRIES[S.account.industry];
         if (!S.rounds.length) { S.account.value = ind.value; S.account.margin = ind.margin; S.account.serviceArea = ind.local ? 'local' : 'national'; }

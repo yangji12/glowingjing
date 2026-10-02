@@ -98,7 +98,7 @@
       id: U.uid('cmp'), type: type, name: D.CAMPAIGN_TYPES[type].name + ' campaign ' + n, status: 'enabled',
       goal: goal || state.account.goal, dailyBudget: type === 'video' ? 25 : 30,
       bidStrategy: defaultBidStrategy(type, state), maxCpc: benchCpc(state, type === 'shopping' ? 'shopping' : type === 'display' ? 'display' : 'search'), targetCpa: 0, targetRoas: 0,
-      targetIs: 70, maxCpv: 0.05, targetCpm: 8,
+      targetIs: 70, maxCpv: 0.05, targetCpv: 0.04, targetCpm: 8,
       locations: defaultLocations(state), locationOption: 'presenceOrInterest', language: 'en', schedule: 'all',
       devices: { mobile: 0, desktop: 0, tablet: 0 },
       negativesText: ''
@@ -112,7 +112,8 @@
       c.freqCap = 0;
       c.adGroups = [newAdGroup('display', state)];
     } else if (type === 'video') {
-      c.videoFormat = 'skippable';
+      c.videoSubtype = 'views';
+      c.freqGoal = 2;
       c.videoSurfaces = Object.keys(D.YT_SURFACES);
       c.inventory = 'standard';
       c.freqCap = 0;
@@ -342,24 +343,51 @@
     return { score: score, parts: parts };
   }
 
-  function videoAdCheck(ad, format, surfaces) {
-    var f = D.VIDEO_FORMATS[format] || D.VIDEO_FORMATS.skippable;
+  // Video campaign subtype (older saves stored only a format)
+  function videoSubtype(c) {
+    if (c.videoSubtype && D.VIDEO_SUBTYPES[c.videoSubtype]) return c.videoSubtype;
+    return c.videoFormat === 'nonskip' || c.videoFormat === 'bumper' ? 'nonskipReach' : 'views';
+  }
+
+  // Can this ad run as this format? (Google picks formats by video length.)
+  function videoFits(ad, format) {
+    var len = Number(ad.length) || 30;
+    var f = D.VIDEO_FORMATS[format];
+    return !f.maxLen || len <= f.maxLen;
+  }
+
+  // kind: a subtype key ("views") or a single format key ("bumper")
+  function videoAdCheck(ad, kind, surfaces) {
+    var sub = D.VIDEO_SUBTYPES[kind];
+    var formats = sub ? Object.keys(sub.formats) : [kind in D.VIDEO_FORMATS ? kind : 'skippable'];
+    var fits = formats.filter(function (f) { return videoFits(ad, f); });
     var errors = [];
     var issues = [];
     var len = Number(ad.length) || 30;
-    if (f.maxLen && len > f.maxLen) errors.push(f.name + ' ads must be ' + f.maxLen + ' seconds or shorter (yours: ' + len + 's)');
+    if (!fits.length) {
+      var maxLen = Math.max.apply(null, formats.map(function (f) { return D.VIDEO_FORMATS[f].maxLen || 999; }));
+      errors.push((sub ? sub.name : D.VIDEO_FORMATS[formats[0]].name) + ' needs a video of ' + maxLen + ' seconds or less (yours: ' + len + 's)');
+    }
+    var audio = formats.length === 1 && formats[0] === 'audio';
     var cr = videoCreative(ad);
     D.ABCD.forEach(function (g) {
-      g.items.forEach(function (it) { if (!ad[it[0]] && !(it[0] === 'headline' && format === 'bumper')) issues.push(g.name + ': ' + it[1].toLowerCase()); });
+      g.items.forEach(function (it) {
+        if (ad[it[0]] || (it[0] === 'headline' && fits.length === 1 && fits[0] === 'bumper')) return;
+        if (audio && ['pacing', 'people', 'productDemo', 'captions'].indexOf(it[0]) >= 0) return;
+        issues.push(g.name + ': ' + it[1].toLowerCase());
+      });
     });
-    var onShorts = format === 'shorts' || (surfaces && surfaces.indexOf('shorts') >= 0);
+    if (audio && !ad.brandAudio) issues.unshift('Audio ads are heard, not seen: say the brand name in the voiceover');
+    var onShorts = fits.indexOf('shorts') >= 0 && (!surfaces || surfaces.indexOf('shorts') >= 0);
     if (onShorts && ad.aspect !== '9:16') issues.push('Shorts: use vertical 9:16 video, or horizontal video shows small with black bars');
-    if (format === 'skippable' && len > 180) issues.push('Skippable ads over 3 minutes lose most viewers: aim for 15–60 seconds');
-    if (!ad.companion && (format === 'skippable' || format === 'nonskip')) issues.push('Add a companion banner (desktop)');
-    if (format === 'infeed' && !ad.description) issues.push('In-feed ads show a description line: add one');
-    var lenScore = format === 'skippable' ? (len >= 12 && len <= 60 ? 1 : len <= 180 ? 0.6 : 0.2) : 1;
-    var pts = cr.score * 8 + lenScore * 1.5 + (ad.companion ? 0.5 : 0);
-    return { valid: errors.length === 0, errors: errors, issues: issues, points: pts, max: 10, creative: cr, label: errors.length ? 'Not eligible' : strengthLabel(pts, 10) };
+    if (fits.indexOf('skippable') >= 0 && len > 180) issues.push('Skippable ads over 3 minutes lose most viewers: aim for 15–60 seconds');
+    if (fits.indexOf('bumper') < 0 && formats.indexOf('bumper') >= 0 && fits.length) issues.push('A 6-second cut would also let this run as a bumper ad');
+    if (!ad.companion && (fits.indexOf('skippable') >= 0 || fits.indexOf('nonskip') >= 0)) issues.push('Add a companion banner (desktop)');
+    if (fits.indexOf('infeed') >= 0 && !ad.description) issues.push('In-feed ads show a description line: add one');
+    var lenScore = fits.indexOf('skippable') >= 0 ? (len >= 12 && len <= 60 ? 1 : len <= 180 ? 0.6 : 0.2) : 1;
+    var crScore = audio ? (ad.brandAudio ? 0.5 : 0) + (ad.hook ? 0.25 : 0) + (ad.cta || ad.endCard ? 0.25 : 0) : cr.score;
+    var pts = crScore * 8 + lenScore * 1.5 + (ad.companion ? 0.5 : 0);
+    return { valid: errors.length === 0, errors: errors, issues: issues, points: pts, max: 10, creative: { score: crScore, parts: cr.parts }, formats: fits, label: errors.length ? 'Not eligible' : strengthLabel(pts, 10) };
   }
 
   // ---------------------------------------------------------------------------
@@ -526,6 +554,8 @@
     s.campaigns.forEach(function (c) {
       if (c.type === 'video') {
         if (!c.videoSurfaces) c.videoSurfaces = Object.keys(D.YT_SURFACES);
+        if (!c.videoSubtype) c.videoSubtype = videoSubtype(c);
+        if (!c.freqGoal) c.freqGoal = 2;
         if (!c.inventory) c.inventory = 'standard';
       }
     });
@@ -536,7 +566,7 @@
     newState: newState, newCampaign: newCampaign, newAdGroup: newAdGroup, newRSA: newRSA, newRDA: newRDA,
     newVideoAd: newVideoAd, newProduct: newProduct, newTargeting: newTargeting, businessVocab: businessVocab,
     relevance: relevance, intentOf: intentOf, policyIssues: policyIssues, rsaStrength: rsaStrength,
-    rdaStrength: rdaStrength, videoAdCheck: videoAdCheck, videoCreative: videoCreative, feedQuality: feedQuality, quickStartSearch: quickStartSearch, contentTopic: contentTopic,
+    rdaStrength: rdaStrength, videoAdCheck: videoAdCheck, videoCreative: videoCreative, videoSubtype: videoSubtype, videoFits: videoFits, feedQuality: feedQuality, quickStartSearch: quickStartSearch, contentTopic: contentTopic,
     applyTemplate: applyTemplate, adGroupKeywords: adGroupKeywords,
     campaignNegatives: campaignNegatives, absoluteUrl: absoluteUrl, keywordTokenCoverage: keywordTokenCoverage,
     hasCTA: hasCTA, migrate: migrate, fit: fit, STRENGTH_LABELS: STRENGTH_LABELS

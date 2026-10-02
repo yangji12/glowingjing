@@ -11,8 +11,8 @@
 
   // Which contexts each format can appear in (filtered by the campaign's placements).
   var CONTEXTS = {
-    watchDesktop: { label: 'Watch page · desktop', surface: 'instream', device: 'desktop', w: 1280, h: 800, formats: ['skippable', 'nonskip', 'bumper'] },
-    watchMobile: { label: 'Watch page · mobile', surface: 'instream', device: 'mobile', w: 390, h: 844, formats: ['skippable', 'nonskip', 'bumper'] },
+    watchDesktop: { label: 'Watch page · desktop', surface: 'instream', device: 'desktop', w: 1280, h: 800, formats: ['skippable', 'nonskip', 'bumper', 'audio'] },
+    watchMobile: { label: 'Watch page · mobile', surface: 'instream', device: 'mobile', w: 390, h: 844, formats: ['skippable', 'nonskip', 'bumper', 'audio'] },
     ctv: { label: 'TV screen', surface: 'ctv', device: 'tv', w: 1280, h: 760, formats: ['skippable', 'nonskip', 'bumper'] },
     partner: { label: 'Video partner site', surface: 'partners', device: 'desktop', w: 1280, h: 800, formats: ['skippable', 'nonskip', 'bumper', 'infeed'] },
     homeFeed: { label: 'Home feed · desktop', surface: 'feed', device: 'desktop', w: 1280, h: 800, formats: ['infeed'] },
@@ -22,12 +22,20 @@
     shorts: { label: 'Shorts feed', surface: 'shorts', device: 'mobile', w: 390, h: 844, formats: ['shorts', 'skippable', 'bumper'] }
   };
 
-  function contextsFor(format, surfaces) {
+  // formats: one format key or a list (the formats an ad can run as)
+  function contextsFor(formats, surfaces) {
+    formats = [].concat(formats);
     var on = surfaces && surfaces.length ? surfaces : Object.keys(D.YT_SURFACES);
     return Object.keys(CONTEXTS).filter(function (id) {
       var cx = CONTEXTS[id];
-      return cx.formats.indexOf(format) >= 0 && on.indexOf(cx.surface) >= 0;
+      return on.indexOf(cx.surface) >= 0 && formats.some(function (f) { return cx.formats.indexOf(f) >= 0 && D.YT_SURFACES[cx.surface].formats.indexOf(f) >= 0; });
     });
+  }
+
+  // the format an ad shows as in a context (first of its formats the context supports)
+  function formatFor(id, formats) {
+    formats = [].concat(formats);
+    return formats.find(function (f) { return CONTEXTS[id].formats.indexOf(f) >= 0; }) || formats[0];
   }
 
   function topicInfo(state) {
@@ -88,6 +96,13 @@
     var adLen = format === 'bumper' ? Math.min(len, 6) : format === 'nonskip' ? Math.min(len, 15) : len;
     var vertical = ad.aspect === '9:16';
     var name = acc.businessName || 'Advertiser';
+    if (format === 'audio') {
+      return '<div class="ytm-player audio ' + (size || '') + '"><img class="ytm-media" src="' + esc(adArt(ad, acc, false)) + '" alt="">' +
+        '<div class="ytm-top"><span class="ytm-badge">Sponsored</span> · ' + esc(domain) + '</div>' +
+        '<div class="ytm-wave">' + [6, 14, 22, 12, 28, 18, 9, 24, 16, 30, 12, 20, 8, 26, 14].map(function (hh) { return '<i style="height:' + hh + 'px"></i>'; }).join('') + '</div>' +
+        '<div class="ytm-card">' + avatar(acc) + '<div class="ytm-card-text"><b>' + esc(ad.headline || name) + '</b><span>Audio ad · ' + esc(domain) + '</span></div><span class="ytm-cta">' + esc(ad.cta || 'Learn more') + '</span></div>' +
+        '<div class="ytm-bar"><span style="width:20%"></span></div><div class="ytm-time">Ad · 0:04 / ' + fmtTime(Math.min(len, 30)) + ' · 🔊</div></div>';
+    }
     return '<div class="ytm-player ' + (size || '') + (vertical ? ' pillar' : '') + '">' + media(ad, acc, o, vertical) +
       '<div class="ytm-top"><span class="ytm-badge">Sponsored</span> · ' + esc(domain) + '</div>' +
       (size === 'tv' ? '' : '<div class="ytm-card">' + avatar(acc) + '<div class="ytm-card-text"><b>' + esc(ad.headline || name) + '</b><span>' + esc(domain) + '</span></div><span class="ytm-cta">' + esc(ad.cta || 'Learn more') + '</span></div>') +
@@ -187,9 +202,10 @@
       (format === 'skippable' ? '<div class="ytm-shorts-skip">' + skipButton(format, o) + '</div>' : '') + '</div>';
   };
 
-  function render(id, ad, acc, format, state, o) {
+  function render(id, ad, acc, formats, state, o) {
     o = o || {};
     var cx = CONTEXTS[id];
+    var format = formatFor(id, formats);
     var t = topicInfo(state);
     var inner = R[id](ad || {}, acc || {}, format, o, t);
     var frame = cx.device === 'mobile' ? 'phone' : cx.device === 'tv' ? 'tv' : 'desktop';
@@ -197,12 +213,13 @@
   }
 
   // A scaled-down, live-updating preview card for the editor and previews page.
-  function thumbnail(id, ad, acc, format, state, o, maxW) {
+  function thumbnail(id, ad, acc, formats, state, o, maxW) {
     var cx = CONTEXTS[id];
+    var format = formatFor(id, formats);
     var scale = Math.min(1, (maxW || 520) / cx.w, cx.device === 'mobile' ? 0.62 : 1);
-    return '<figure class="ytm-fig"><figcaption>' + esc(cx.label) + ' · ' + esc(D.YT_SURFACES[cx.surface].short) + '</figcaption><div class="ytm-scale" style="width:' + Math.round(cx.w * scale) + 'px;height:' + Math.round(cx.h * scale) + 'px"><div style="transform:scale(' + scale.toFixed(4) + ');transform-origin:0 0">' +
+    return '<figure class="ytm-fig"><figcaption>' + esc(cx.label) + ' · ' + esc(D.VIDEO_FORMATS[format].name) + '</figcaption><div class="ytm-scale" style="width:' + Math.round(cx.w * scale) + 'px;height:' + Math.round(cx.h * scale) + 'px"><div style="transform:scale(' + scale.toFixed(4) + ');transform-origin:0 0">' +
       render(id, ad, acc, format, state, o) + '</div></div></figure>';
   }
 
-  AdSim.youtube = { CONTEXTS: CONTEXTS, contextsFor: contextsFor, render: render, thumbnail: thumbnail };
+  AdSim.youtube = { CONTEXTS: CONTEXTS, contextsFor: contextsFor, formatFor: formatFor, render: render, thumbnail: thumbnail };
 })(typeof window !== 'undefined' ? window : globalThis);

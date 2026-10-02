@@ -140,11 +140,13 @@
     max_clicks:      { name: 'Maximize clicks', types: ['search', 'display', 'shopping'], needsConv: false, auto: true, desc: 'Automatically sets bids to get as many clicks as possible within budget. Good for new accounts and traffic goals.' },
     max_conversions: { name: 'Maximize conversions', types: ['search', 'display', 'video'], needsConv: true, auto: true, desc: 'Smart Bidding: spends the budget to get the most conversions. Needs conversion tracking.' },
     target_cpa:      { name: 'Target CPA', types: ['search', 'display', 'video'], needsConv: true, auto: false, desc: 'Smart Bidding: aims for conversions at your target cost per acquisition. Best with 15–30+ conversions/month.' },
-    max_conv_value:  { name: 'Maximize conversion value', types: ['search'], needsConv: true, auto: true, desc: 'Smart Bidding: spends the budget to get the most revenue. Needs conversion values.' },
-    target_roas:     { name: 'Target ROAS', types: ['search', 'shopping'], needsConv: true, auto: false, desc: 'Smart Bidding: aims for your target return on ad spend. Needs conversion values and history.' },
+    max_conv_value:  { name: 'Maximize conversion value', types: ['search', 'video'], needsConv: true, auto: true, desc: 'Smart Bidding: spends the budget to get the most revenue. Needs conversion values.' },
+    target_roas:     { name: 'Target ROAS', types: ['search', 'shopping', 'video'], needsConv: true, auto: false, desc: 'Smart Bidding: aims for your target return on ad spend. Needs conversion values and history.' },
     target_is:       { name: 'Target impression share', types: ['search'], needsConv: false, auto: false, desc: 'Bids to show your ad at the top of the page a % of the time. Typically for brand terms.' },
     vcpm:            { name: 'Viewable CPM (vCPM)', types: ['display'], needsConv: false, auto: false, desc: 'Pay per 1,000 viewable impressions. For awareness.' },
     max_cpv:         { name: 'Maximum CPV', types: ['video'], needsConv: false, auto: false, desc: 'Pay per view (30s or full video, or interaction). For skippable in-stream and in-feed.' },
+    target_cpv:      { name: 'Target CPV', types: ['video'], needsConv: false, auto: false, desc: 'Sets bids to get views at about the average cost per view you choose.' },
+    max_engagements: { name: 'Maximize engagements', types: ['video'], needsConv: false, auto: true, desc: 'Automatically bids to get as many channel subscriptions, likes and shares as possible within budget.' },
     target_cpm:      { name: 'Target CPM', types: ['video'], needsConv: false, auto: false, desc: 'Pay per 1,000 impressions. For bumper, non-skippable and reach campaigns.' }
   };
 
@@ -153,13 +155,37 @@
     nonskip:   { name: 'Non-skippable in-stream', maxLen: 15, billing: 'cpm', desc: '15 seconds or shorter; viewers must watch. Pay per 1,000 impressions.' },
     bumper:    { name: 'Bumper', maxLen: 6, billing: 'cpm', desc: '6 seconds or shorter; non-skippable. Great for reach and message reinforcement.' },
     infeed:    { name: 'In-feed video', maxLen: null, billing: 'cpv', desc: 'Thumbnail + text in YouTube search/watch next. Pay when people click to watch.' },
-    shorts:    { name: 'YouTube Shorts', maxLen: 60, billing: 'cpm', desc: 'Vertical (9:16) video between Shorts. Best with vertical creative under 60s.' }
+    shorts:    { name: 'YouTube Shorts', maxLen: 60, billing: 'cpm', desc: 'Vertical (9:16) video between Shorts. Best with vertical creative under 60s.' },
+    audio:     { name: 'Audio ad', maxLen: 30, billing: 'cpm', desc: 'Up to 30 seconds of audio with a still image, heard while people listen to music and podcasts on YouTube.' }
+  };
+
+  // Video campaign subtypes, as offered in Google Ads. formats = the mix Google serves (share of
+  // impressions when the ad fits each format); bids = allowed bid strategies (first = default);
+  // m = how the subtype shifts cost, view rate, engaged-view conversions, ad recall and reach spread.
+  var VIDEO_SUBTYPES = {
+    views: { name: 'Video views', group: 'Video views', formats: { skippable: 0.55, infeed: 0.2, shorts: 0.25 }, bids: ['max_cpv', 'target_cpv'], goals: ['consideration', 'traffic', 'awareness'],
+      desc: 'Get people to watch your video ads using skippable in-stream, in-feed and Shorts ads. You pay for views (TrueView). Builds product consideration: people who choose to watch are more likely to search for your brand.',
+      m: { cost: 1, view: 1.1, evc: 0.9, recall: 1, spread: 1 } },
+    efficientReach: { name: 'Efficient reach', group: 'Video reach', formats: { bumper: 0.35, skippable: 0.35, infeed: 0.1, shorts: 0.2 }, bids: ['target_cpm'], goals: ['awareness'],
+      desc: 'Get the most reach for your budget using bumper, skippable in-stream, in-feed and Shorts ads.', m: { cost: 0.85, view: 1, evc: 0.6, recall: 1, spread: 1.6 } },
+    nonskipReach: { name: 'Non-skippable reach', group: 'Video reach', formats: { bumper: 0.5, nonskip: 0.5 }, bids: ['target_cpm'], goals: ['awareness'],
+      desc: 'Reach people using bumper and non-skippable in-stream ads (up to 15 seconds). Everyone sees the whole message.', m: { cost: 1.05, view: 1, evc: 0.6, recall: 1.15, spread: 1.2 } },
+    targetFrequency: { name: 'Target frequency', group: 'Video reach', formats: { bumper: 0.3, skippable: 0.3, nonskip: 0.2, infeed: 0.1, shorts: 0.1 }, bids: ['target_cpm'], goals: ['awareness', 'consideration'],
+      desc: 'Reach the same people several times a week (you choose 1–4 times per week) using bumper, skippable, non-skippable, in-feed and Shorts ads.', m: { cost: 1.1, view: 1, evc: 0.7, recall: 1.2, spread: 1 } },
+    conversions: { name: 'Drive conversions', group: 'Drive conversions', formats: { skippable: 0.6, infeed: 0.15, shorts: 0.25 }, bids: ['max_conversions', 'target_cpa', 'max_conv_value', 'target_roas'], needsConv: true, goals: ['sales', 'leads'],
+      desc: 'Get more conversions with video ads designed to encourage valuable interactions with your business. Needs conversion tracking and a clear call to action.', m: { cost: 1.15, view: 1, evc: 0.95, recall: 0.9, spread: 1 } },
+    sequence: { name: 'Ad sequence', group: 'Ad sequence', formats: { skippable: 0.5, nonskip: 0.25, bumper: 0.25 }, bids: ['target_cpm'], goals: ['awareness', 'consideration'],
+      desc: 'Tell your story by showing ads in a set order to each viewer (step 1, then 2, then 3) using skippable, non-skippable and bumper ads. Each ad in the ad group is one step.', m: { cost: 1.1, view: 1, evc: 0.7, recall: 1.05, spread: 0.9 } },
+    audio: { name: 'Audio reach', group: 'Audio reach', formats: { audio: 1 }, bids: ['target_cpm'], goals: ['awareness'],
+      desc: 'Reach people while they are listening to music and podcasts on YouTube with audio ads (up to 30 seconds, shown with a still image). The voiceover carries the message.', m: { cost: 0.7, view: 1, evc: 0.4, recall: 0.9, spread: 1.2 } },
+    engagement: { name: 'YouTube subscriptions and engagements', group: 'Subscriptions & engagements', formats: { skippable: 0.5, infeed: 0.25, shorts: 0.25 }, bids: ['max_engagements'], goals: ['consideration', 'awareness'], isNew: true,
+      desc: 'Get subscriptions and engagement on your YouTube channel (subscribes, likes, shares) with video ads designed to encourage valuable interactions.', m: { cost: 1, view: 1.05, evc: 0.35, recall: 1, spread: 1 } }
   };
 
   // Where YouTube ads can appear. share = part of a segment's video inventory on that surface;
   // the multipliers are relative to an in-stream ad on YouTube videos.
   var YT_SURFACES = {
-    instream: { name: 'YouTube videos (in-stream)', short: 'In-stream', formats: ['skippable', 'nonskip', 'bumper'], share: 0.42, cost: 1.0, view: 1.0, ctr: 1.0, cvr: 1.0, recall: 1.0,
+    instream: { name: 'YouTube videos (in-stream)', short: 'In-stream', formats: ['skippable', 'nonskip', 'bumper', 'audio'], share: 0.42, cost: 1.0, view: 1.0, ctr: 1.0, cvr: 1.0, recall: 1.0,
       desc: 'Before, during or after YouTube videos on phones, computers and tablets. The core video placement.' },
     feed: { name: 'Home & Watch Next feeds', short: 'Feeds', formats: ['infeed'], share: 0.16, cost: 1.15, view: 1.0, ctr: 1.3, cvr: 1.1, recall: 0.6,
       desc: 'A thumbnail and headline in the YouTube home feed and next to videos. People choose to watch, so views are high quality.' },
@@ -246,7 +272,7 @@
     { id: 'VID-3', cat: 'Video', title: 'Add a call to action and companion banner', text: 'Add a CTA button and headline so interested viewers can click through to your website; a companion banner extends your message on desktop.' },
     { id: 'VID-5', cat: 'Video', title: 'Use the ABCD creative framework', text: 'Attract (hook in the first 5 seconds, fast pacing), Brand (show and say the brand early), Connect (people, product in use, captions), Direct (a clear call to action and end card). Ads that follow ABCD earn higher view rates, recall and conversions.' },
     { id: 'VID-6', cat: 'Video', title: 'Choose YouTube placements on purpose', text: 'In-stream suits most goals; in-feed (Home, Watch Next, search) wins high-intent viewers who choose to watch; Shorts is cheap reach that needs vertical video; TV screens build recall but rarely drive clicks; video partners add cheap reach of lower quality. Match placements to the format and the goal, and pick an inventory type that fits your brand-safety needs.' },
-    { id: 'VID-4', cat: 'Video', title: 'Choose format and bidding by goal', text: 'Awareness: bumper/non-skippable with Target CPM. Consideration: skippable in-stream or in-feed with Maximum CPV. Action: skippable with conversion bidding (needs tracking).' },
+    { id: 'VID-4', cat: 'Video', title: 'Choose the video campaign subtype by goal', text: 'Awareness: Video reach (Efficient reach for the most people per dollar, Non-skippable reach so everyone sees the full message, Target frequency to repeat the message 2–4 times a week) or Audio reach. Consideration: Video views (pay for people who choose to watch), Ad sequence (tell a story in steps), or Subscriptions & engagements. Sales and leads: Drive conversions, with conversion tracking. The subtype decides which formats and bid strategies are available.' },
     { id: 'SHP-1', cat: 'Shopping', title: 'Write descriptive product titles', text: 'Front-load Brand + Product type + key attributes (color, size, material, model). Titles of 70–150 characters perform best; only the first ~70 are visible, so put the most important words first.' },
     { id: 'SHP-2', cat: 'Shopping', title: 'Provide complete product data', text: 'Include GTIN, brand, a high-quality image, accurate price and availability. Products missing required data are disapproved; products missing GTIN get less visibility.' },
     { id: 'SHP-3', cat: 'Shopping', title: 'Write useful product descriptions', text: 'Descriptions should cover features, materials, sizing and use cases (150+ characters minimum; 500+ recommended).' },
@@ -348,7 +374,7 @@
     INDUSTRIES: INDUSTRIES, AGE_BANDS: AGE_BANDS, AGE_SHARE: AGE_SHARE, GENDERS: GENDERS,
     LOCATIONS: LOCATIONS, AUDIENCES: AUDIENCES, AUDIENCE_TYPES: AUDIENCE_TYPES, TOPICS: TOPICS,
     CAMPAIGN_TYPES: CAMPAIGN_TYPES, GOALS: GOALS, BID_STRATEGIES: BID_STRATEGIES,
-    VIDEO_FORMATS: VIDEO_FORMATS, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
+    VIDEO_FORMATS: VIDEO_FORMATS, VIDEO_SUBTYPES: VIDEO_SUBTYPES, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
     LOW_INTENT_WORDS: LOW_INTENT_WORDS, CTA_WORDS: CTA_WORDS, GUIDELINES: GUIDELINES,
     GUIDE_INDEX: GUIDE_INDEX, TEMPLATES: TEMPLATES
   };
