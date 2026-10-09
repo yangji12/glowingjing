@@ -102,7 +102,7 @@
   }
   function checkbox(path, label, help) {
     var v = !!getPath(S, path);
-    return '<label class="check"><input type="checkbox" data-bind="' + esc(path) + '" data-type="bool"' + (v ? ' checked' : '') + '> <span>' + label + (help ? '<small>' + help + '</small>' : '') + '</span></label>';
+    return '<div class="opt-row"><label class="check"><input type="checkbox" data-bind="' + esc(path) + '" data-type="bool"' + (v ? ' checked' : '') + '> <span>' + label + '</span></label>' + (help ? tip(help) : '') + '</div>';
   }
   function arrayCheck(path, value, label, extra) {
     var arr = getPath(S, path) || [];
@@ -110,10 +110,36 @@
   }
   function radio(path, value, label, help) {
     var v = getPath(S, path);
-    return '<label class="check"><input type="radio" name="' + esc(path) + '" data-bind="' + esc(path) + '" value="' + esc(value) + '"' + (String(v) === String(value) ? ' checked' : '') + '> <span>' + label + (help ? '<small>' + help + '</small>' : '') + '</span></label>';
+    return '<div class="opt-row"><label class="check"><input type="radio" name="' + esc(path) + '" data-bind="' + esc(path) + '" value="' + esc(value) + '"' + (String(v) === String(value) ? ' checked' : '') + '> <span>' + label + '</span></label>' + (help ? tip(help) : '') + '</div>';
   }
   function field(label, control, help, cls) {
-    return '<div class="field ' + (cls || '') + '"><label class="lbl">' + label + '</label>' + control + (help ? '<div class="help">' + help + '</div>' : '') + '</div>';
+    return '<div class="field ' + (cls || '') + '"><div class="lbl-row"><label class="lbl">' + label + '</label>' + (help ? tip(help) : '') + '</div>' + control + '</div>';
+  }
+  // Extra information stays one click away behind a small ⓘ icon
+  function tip(html, label) {
+    return '<details class="info-tip' + (label ? ' info-tip-block' : '') + '"><summary aria-label="More information" title="More information"><span class="tip-ico">i</span>' + (label ? '<span class="tip-label">' + label + '</span>' : '') + '</summary><div class="tip-body">' + html + '</div></details>';
+  }
+  // Turns help paragraphs, explanation boxes and one-line card descriptions into ⓘ icons
+  function tipify(root) {
+    root.querySelectorAll('.info-card').forEach(function (el) {
+      var w = document.createElement('div');
+      w.className = 'tip-line';
+      w.innerHTML = tip(el.innerHTML, 'How this works');
+      el.replaceWith(w);
+    });
+    var targets = 'h1,h2,h3,h4,.lbl,label.lbl';
+    root.querySelectorAll('p.help, div.help, h3 + p.muted, h2 + p.muted, .card-head + p.muted').forEach(function (el) {
+      if (el.closest('.tip-body') || !el.isConnected) return;
+      // attach to the nearest heading or field label just above (looking back a few siblings)
+      var host = null, prev = el.previousElementSibling;
+      for (var n = 0; prev && n < 6 && !host; n++, prev = prev.previousElementSibling) {
+        host = prev.matches(targets) ? prev : prev.matches('.card-head') ? prev.querySelector('h3,h4') : prev.matches('.lbl-row') ? prev : null;
+      }
+      var holder = document.createElement('span');
+      holder.innerHTML = tip(el.innerHTML);
+      if (host) { host.appendChild(holder.firstChild); el.remove(); }
+      else { var line = document.createElement('div'); line.className = 'tip-line'; line.appendChild(holder.firstChild); el.replaceWith(line); }
+    });
   }
   function live(name, fn) {
     LIVE[name] = fn;
@@ -385,7 +411,8 @@
   }
 
   function header(title, sub, right) {
-    return '<div class="page-head"><div><h1>' + title + '</h1>' + (sub ? '<p class="sub">' + sub + '</p>' : '') + '</div><div class="page-actions">' + (right || '') + '</div></div>';
+    var context = sub && sub.indexOf('·') >= 0;
+    return '<div class="page-head"><div><h1>' + title + (sub && !context ? tip(sub) : '') + '</h1>' + (context ? '<p class="sub">' + sub + '</p>' : '') + '</div><div class="page-actions">' + (right || '') + '</div></div>';
   }
 
   // ----- Overview -----
@@ -534,7 +561,7 @@
     var enabled = camps.filter(function (c) { return c.status === 'enabled'; });
     var ev = SC.evaluateSetup(SC.scopedState(S, t));
     var r = lastRoundWith(t);
-    var h = header(ct.icon + ' ' + esc(ct.platform), esc(ct.desc),
+    var h = header(ct.icon + ' ' + esc(ct.platform) + tip(esc(ct.desc)), '',
       btn('＋ New ' + esc(ct.platform) + ' campaign', 'newPlatformCampaign', t, 'primary') + (enabled.length ? btn('▶ Run ' + esc(ct.platform) + ' simulation', 'runRound', t) : ''));
     var steps = [
       ['1', 'Build', 'Create a campaign and work through its tabs until the checks pass.', camps.length > 0],
@@ -543,8 +570,8 @@
       ['4', 'Review', 'Read the results and feedback below, then improve and run again.', !!r]
     ];
     h += '<div class="plat-steps">' + steps.map(function (s) {
-      var inner = '<span class="step-n">' + (s[3] ? '✓' : s[0]) + '</span><div><b>' + s[1] + '</b><p>' + s[2] + '</p></div>';
-      return s[4] ? '<a class="plat-step' + (s[3] ? ' done' : '') + '" href="' + s[4] + '">' + inner + '</a>' : '<div class="plat-step' + (s[3] ? ' done' : '') + '">' + inner + '</div>';
+      var inner = '<span class="step-n">' + (s[3] ? '✓' : s[0]) + '</span><b>' + s[1] + '</b>';
+      return s[4] ? '<a class="plat-step' + (s[3] ? ' done' : '') + '" href="' + s[4] + '" title="' + esc(s[2]) + '">' + inner + '</a>' : '<div class="plat-step' + (s[3] ? ' done' : '') + '" title="' + esc(s[2]) + '">' + inner + '</div>';
     }).join('') + '</div>';
     if (UI.newCamp && UI.newCamp.fixed === t) h += newCampaignPanel();
     if (!camps.length && !(UI.newCamp && UI.newCamp.fixed === t)) {
@@ -1416,18 +1443,18 @@
     var ev = SC.evaluateSetup(SC.scopedState(S, scope));
     var enabled = S.campaigns.filter(function (c) { return c.status === 'enabled' && (scope === 'all' || c.type === scope); });
     var fails = ev.checks.filter(function (x) { return x.status === 'fail'; });
-    var h = header('Run simulation', 'Each round simulates 30 days of auctions against competitors in the ' + esc(industry().name) + ' market. Run one platform on its own, or all platforms together.');
+    var h = header('Run simulation' + tip('<p>Each round simulates 30 days of auctions against competitors in the ' + esc(industry().name) + ' market. Run one platform on its own, or all platforms together.</p><p><b>Tips</b></p><ul class="tips"><li>Change one or two things per round so you can tell what worked.</li><li>Smart Bidding needs a round to learn after you change it.</li><li>Check Reports → Search terms after every round and add negatives.</li><li>Market conditions (competition, seasonality) shift a little each round.</li></ul>'), '');
     h += '<div class="card"><h3>What do you want to simulate?</h3><div class="scope-picks">' + ['all'].concat(D.PLATFORMS).map(function (t) {
       var k = countOn(t);
       var ct = D.CAMPAIGN_TYPES[t];
       return '<button type="button" class="pick scope' + (scope === t ? ' sel' : '') + (k ? '' : ' disabled') + '"' + (k ? ' data-action="setSimScope" data-args="' + esc(JSON.stringify(t)) + '"' : ' disabled') + '><span class="big-ico">' + (ct ? ct.icon : '🌐') + '</span><b>' + (ct ? esc(ct.platform) + ' only' : 'All platforms') + '</b><small>' + (k ? k + ' enabled campaign' + (k === 1 ? '' : 's') : 'No enabled campaigns') + '</small></button>';
     }).join('') + '</div><p class="help">A single-platform round is compared with your previous round of the same kind. Run all platforms together to compare channels in Cross-channel results.</p></div>';
-    h += '<div class="grid-2-1"><div class="card run-card"><h2>Round ' + n + ' · ' + esc(scopeLabel(scope)) + '</h2>' +
-      '<p>The simulator will: estimate search demand for your keywords and audiences → run ad auctions (your bid × Quality Score × assets vs. competitors) → apply your budget → generate clicks, conversions, revenue and website traffic → score your setup and results → give feedback.</p>' +
+    h += '<div class="card run-card"><h2>Round ' + n + ' · ' + esc(scopeLabel(scope)) + '</h2>' +
+      '<p class="help">The simulator will: estimate search demand for your keywords and audiences → run ad auctions (your bid × Quality Score × assets vs. competitors) → apply your budget → generate clicks, conversions, revenue and website traffic → score your setup and results → give feedback.</p>' +
       '<div class="preflight"><div>' + ring(ev.score, 'Setup score now', 110) + '</div><div><p><b>' + enabled.length + '</b> enabled campaign(s), total budget <b>' + fMoney(U.sum(enabled, function (c) { return Number(c.dailyBudget) || 0; })) + '/day</b>.</p>' +
       (fails.length ? '<p class="warn-text">' + fails.length + ' setup check(s) failing — the round will still run, but expect weaker results.</p><ul class="issues">' + fails.slice(0, 5).map(function (f) { return '<li>' + esc(f.title) + (f.campaign ? ' <span class="muted">(' + esc(f.campaign) + ')</span>' : '') + '</li>'; }).join('') + '</ul>' : '<p class="good-text">✓ No failing setup checks.</p>') +
       '</div></div>' + (enabled.length ? btn('▶ Run round ' + n + ': ' + esc(scopeLabel(scope)) + ' (30 days)', 'runRound', scope, 'primary big') : '<p class="bad-text">Enable at least one campaign to run a round.</p>') + '</div>' +
-      '<div class="card"><h3>Tips</h3><ul class="tips"><li>Change one or two things per round so you can tell what worked.</li><li>Smart Bidding needs a round to learn after you change it.</li><li>Check Reports → Search terms after every round and add negatives.</li><li>Market conditions (competition, seasonality) shift a little each round.</li></ul></div></div>';
+      '';
     if (S.rounds.length) {
       h += '<div class="card"><h3>Round history</h3>' + dataTable('rounds', [
         { key: 'round', label: 'Round', fmt: function (r) { return 'R' + r.round; } },
@@ -1745,7 +1772,7 @@
           return '<div class="guide' + (focus === g.id ? ' focus' : '') + '" id="g-' + g.id + '"><span class="gid">' + g.id + '</span><div><b>' + esc(g.title) + '</b><p>' + esc(g.text) + '</p></div></div>';
         }).join('') + '</div>';
       }).join('') +
-      '<div class="card"><h3>How the simulator works</h3><ul class="tips">' +
+      '<details class="card fb-fold"><summary><b>How the simulator works</b></summary><ul class="tips">' +
       '<li><b>Ad Rank</b> = effective bid × Quality Score × (1 + asset boost). You win an impression when your Ad Rank beats competitors\'.</li>' +
       '<li><b>Actual CPC</b> ≈ the Ad Rank needed to beat the next advertiser ÷ your Quality Score (never above your max bid) — higher Quality Score means cheaper clicks.</li>' +
       '<li><b>Impression share</b> is limited by Ad Rank (lost IS rank) and by budget (lost IS budget).</li>' +
@@ -1755,7 +1782,7 @@
       '<li><b>YouTube</b> results depend on the placement (in-stream, feeds, search, Shorts, TV screens, video partners), the format, the ABCD creative score, audience fit and inventory type. Conversions include engaged-view conversions.</li>' +
       '<li><b>Profit</b> = conversion value × margin − ad cost. Industry values are set so an average advertiser roughly breaks even; good setups earn a profit and poor ones lose money.</li>' +
       '<li><b>ChatGPT ads</b> appear below an answer, labeled Sponsored, in conversations that match your context hints, landing page and ad copy (a relevance-weighted second-price auction). Specific hints reach better conversations; vague hints drift off-target. Reported conversions depend on the pixel, Conversions API, {oppref} and attribution windows.</li>' +
-      '<li>Each round has small random market changes (competition, seasonality). Results for the same setup in the same round are reproducible.</li></ul></div>';
+      '<li>Each round has small random market changes (competition, seasonality). Results for the same setup in the same round are reproducible.</li></ul></details>';
   }
 
   // ----- Settings -----
@@ -1854,6 +1881,7 @@
       '<div class="row wrap">' + btn('⬇ Download PNG', 'stimDownload', null, 'primary') + btn('Close', 'stimClose', null, 'ghost') + '</div>' +
       '<p class="help">The PNG is rendered at 2× resolution. Images from other websites cannot be included; upload images instead.</p>';
     box.querySelector('.stim-panel').innerHTML = panel;
+    tipify(box.querySelector('.stim-panel'));
     var stage = box.querySelector('.stim-stage');
     if (!st.context) { stage.innerHTML = ''; box.hidden = false; return; }
     var m = stimMarkup(st);
@@ -1939,6 +1967,7 @@
     var v = VIEWS[UI.route] || viewOverview;
     var main = document.getElementById('main');
     main.innerHTML = v();
+    tipify(main);
     document.title = 'Digital Ad Lab · ' + ((NAV.find(function (n) { return n[0] === navKey(); }) || [0, 0, 'Campaign editor'])[2]);
     wireImages(main);
     if (keepScroll) window.scrollTo(0, y);
@@ -1962,7 +1991,7 @@
       liveQueued = false;
       document.querySelectorAll('[data-live]').forEach(function (el) {
         var fn = LIVE[el.dataset.live];
-        if (fn) { el.innerHTML = fn(); wireImages(el); }
+        if (fn) { el.innerHTML = fn(); wireImages(el); tipify(el); }
       });
     });
   }
@@ -2262,6 +2291,8 @@
   // ---------------------------------------------------------------------------
 
   document.addEventListener('click', function (e) {
+    var t = e.target.closest('details.info-tip');
+    document.querySelectorAll('details.info-tip[open]').forEach(function (d) { if (d !== t) d.removeAttribute('open'); });
     var el = e.target.closest('[data-action]');
     if (!el || el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
     var fn = ACTIONS[el.dataset.action];

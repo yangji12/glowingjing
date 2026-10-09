@@ -14,6 +14,8 @@ This needs Python 3.8 or newer and nothing else; the server just hosts the app's
 
 For a classroom, run `python ads-simulator/server.py --host 0.0.0.0 --port 8000` on one machine and give students the address. You can also host the `ads-simulator/` folder on any static host, such as GitHub Pages.
 
+Pages show only fields, results and checklists. Explanations, tips and field help sit behind small ⓘ icons: click one to read more.
+
 Each student's work saves automatically in their own browser. **Settings → Export** downloads a `.json` file that students can submit and instructors can import.
 
 ## Student workflow
