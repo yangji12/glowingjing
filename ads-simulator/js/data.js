@@ -59,31 +59,33 @@
 
   // Audience segments. size = monthly display impressions available (US), before demographics.
   var AUDIENCES = [
-    { id: 'aff_foodies', type: 'affinity', name: 'Affinity: Foodies', size: 90e6, inds: ['restaurants', 'retail'] },
-    { id: 'aff_fitness', type: 'affinity', name: 'Affinity: Health & Fitness Buffs', size: 80e6, inds: ['health', 'beauty'] },
-    { id: 'aff_travel', type: 'affinity', name: 'Affinity: Travel Buffs', size: 100e6, inds: ['travel'] },
-    { id: 'aff_tech', type: 'affinity', name: 'Affinity: Technophiles', size: 110e6, inds: ['b2b', 'retail'] },
-    { id: 'aff_beauty', type: 'affinity', name: 'Affinity: Beauty Mavens', size: 70e6, inds: ['beauty'] },
-    { id: 'aff_home', type: 'affinity', name: 'Affinity: Home Decor Enthusiasts', size: 75e6, inds: ['homeservices', 'realestate', 'retail'] },
-    { id: 'aff_auto', type: 'affinity', name: 'Affinity: Auto Enthusiasts', size: 60e6, inds: ['automotive'] },
-    { id: 'aff_biz', type: 'affinity', name: 'Affinity: Business Professionals', size: 95e6, inds: ['b2b', 'finance', 'legal', 'education'] },
-    { id: 'aff_value', type: 'affinity', name: 'Affinity: Value Shoppers', size: 120e6, inds: ['retail', 'beauty', 'restaurants'] },
-    { id: 'im_travel', type: 'inMarket', name: 'In-market: Trips & Hotels', size: 30e6, inds: ['travel'] },
-    { id: 'im_edu', type: 'inMarket', name: 'In-market: Post-secondary & Online Education', size: 18e6, inds: ['education'] },
-    { id: 'im_fitness', type: 'inMarket', name: 'In-market: Fitness Services & Gyms', size: 15e6, inds: ['health'] },
-    { id: 'im_legal', type: 'inMarket', name: 'In-market: Legal Services', size: 8e6, inds: ['legal'] },
-    { id: 'im_home', type: 'inMarket', name: 'In-market: Home Improvement Services', size: 20e6, inds: ['homeservices'] },
-    { id: 'im_software', type: 'inMarket', name: 'In-market: Business Software', size: 14e6, inds: ['b2b'] },
-    { id: 'im_finance', type: 'inMarket', name: 'In-market: Financial & Insurance Services', size: 25e6, inds: ['finance'] },
-    { id: 'im_realestate', type: 'inMarket', name: 'In-market: Residential Properties', size: 16e6, inds: ['realestate'] },
-    { id: 'im_autos', type: 'inMarket', name: 'In-market: Autos & Vehicles', size: 22e6, inds: ['automotive'] },
-    { id: 'im_apparel', type: 'inMarket', name: 'In-market: Apparel & Accessories', size: 40e6, inds: ['retail', 'beauty'] },
-    { id: 'im_coffee', type: 'inMarket', name: 'In-market: Gourmet Food & Coffee', size: 12e6, inds: ['retail', 'restaurants'] },
-    { id: 'im_beauty', type: 'inMarket', name: 'In-market: Beauty Products & Services', size: 28e6, inds: ['beauty'] },
-    { id: 'im_dining', type: 'inMarket', name: 'In-market: Restaurants & Food Delivery', size: 35e6, inds: ['restaurants'] },
-    { id: 'life_moving', type: 'lifeEvent', name: 'Life event: Recently moved', size: 10e6, inds: ['homeservices', 'realestate', 'finance'] },
-    { id: 'life_grad', type: 'lifeEvent', name: 'Life event: Graduating soon', size: 6e6, inds: ['education', 'finance'] },
-    { id: 'life_wedding', type: 'lifeEvent', name: 'Life event: Getting married soon', size: 5e6, inds: ['travel', 'beauty', 'retail', 'finance'] },
+    { id: 'aff_foodies', type: 'affinity', name: 'Affinity: Foodies', size: 90e6, inds: ['restaurants'], kw: 'food cooking recipe recipes coffee tea restaurant gourmet chef baking snack snacks wine kitchen' },
+    { id: 'aff_fitness', type: 'affinity', name: 'Affinity: Health & Fitness Buffs', size: 80e6, inds: ['health', 'beauty'], kw: 'fitness gym running runner runners workout yoga health sport sports athletic training exercise hiit' },
+    { id: 'aff_travel', type: 'affinity', name: 'Affinity: Travel Buffs', size: 100e6, inds: ['travel'], kw: 'travel trip trips vacation hotel camping hiking adventure beach flights' },
+    { id: 'aff_tech', type: 'affinity', name: 'Affinity: Technophiles', size: 110e6, inds: ['b2b'], kw: 'tech technology software gadget gadgets electronics computer phone app' },
+    { id: 'aff_beauty', type: 'affinity', name: 'Affinity: Beauty Mavens', size: 70e6, inds: ['beauty'], kw: 'beauty makeup skincare cosmetics fragrance perfume hair nail lip blush brow serum' },
+    { id: 'aff_home', type: 'affinity', name: 'Affinity: Home Decor Enthusiasts', size: 75e6, inds: ['homeservices', 'realestate'], kw: 'home decor furniture bedding interior garden kitchen' },
+    { id: 'aff_auto', type: 'affinity', name: 'Affinity: Auto Enthusiasts', size: 60e6, inds: ['automotive'], kw: 'car cars auto vehicle truck' },
+    { id: 'aff_biz', type: 'affinity', name: 'Affinity: Business Professionals', size: 95e6, inds: ['b2b', 'finance', 'legal', 'education'], kw: 'business software team teams agency agencies b2b' },
+    { id: 'aff_outdoor', type: 'affinity', name: 'Affinity: Outdoor Enthusiasts', size: 65e6, inds: ['travel'], kw: 'outdoor outdoors camping hiking fishing hunting cooler coolers adventure gear' },
+    { id: 'aff_value', type: 'affinity', name: 'Affinity: Value Shoppers', size: 120e6, inds: ['retail', 'beauty', 'restaurants'], kw: 'deals discount sale affordable cheap budget' },
+    { id: 'im_travel', type: 'inMarket', name: 'In-market: Trips & Hotels', size: 30e6, inds: ['travel'], kw: 'travel trip hotel hotels vacation flights resort' },
+    { id: 'im_edu', type: 'inMarket', name: 'In-market: Post-secondary & Online Education', size: 18e6, inds: ['education'], kw: 'course courses class classes degree school training certificate' },
+    { id: 'im_fitness', type: 'inMarket', name: 'In-market: Fitness Services & Gyms', size: 15e6, inds: ['health'], kw: 'gym fitness trainer yoga hiit studio classes' },
+    { id: 'im_legal', type: 'inMarket', name: 'In-market: Legal Services', size: 8e6, inds: ['legal'], kw: 'lawyer attorney legal law injury' },
+    { id: 'im_home', type: 'inMarket', name: 'In-market: Home Improvement Services', size: 20e6, inds: ['homeservices'], kw: 'repair plumbing hvac roofing contractor remodel renovation' },
+    { id: 'im_software', type: 'inMarket', name: 'In-market: Business Software', size: 14e6, inds: ['b2b'], kw: 'software saas app platform tool tools' },
+    { id: 'im_finance', type: 'inMarket', name: 'In-market: Financial & Insurance Services', size: 25e6, inds: ['finance'], kw: 'insurance loan loans finance bank mortgage' },
+    { id: 'im_realestate', type: 'inMarket', name: 'In-market: Residential Properties', size: 16e6, inds: ['realestate'], kw: 'home homes house apartment realtor property' },
+    { id: 'im_autos', type: 'inMarket', name: 'In-market: Autos & Vehicles', size: 22e6, inds: ['automotive'], kw: 'car cars vehicle auto dealer' },
+    { id: 'im_apparel', type: 'inMarket', name: 'In-market: Apparel & Accessories', size: 40e6, inds: ['retail', 'beauty'], kw: 'apparel clothing shoes shoe sneakers boots fashion accessories bags bag tote socks shirts dress jewelry' },
+    { id: 'im_sports', type: 'inMarket', name: 'In-market: Sporting Goods & Outdoor Gear', size: 24e6, inds: ['health'], kw: 'sports sporting outdoor camping cooler coolers gear equipment running shoes fitness bike tumbler drinkware' },
+    { id: 'im_coffee', type: 'inMarket', name: 'In-market: Gourmet Food & Coffee', size: 12e6, inds: ['restaurants'], kw: 'coffee tea gourmet food snack chocolate espresso' },
+    { id: 'im_beauty', type: 'inMarket', name: 'In-market: Beauty Products & Services', size: 28e6, inds: ['beauty'], kw: 'beauty makeup skincare cosmetics fragrance perfume salon spa' },
+    { id: 'im_dining', type: 'inMarket', name: 'In-market: Restaurants & Food Delivery', size: 35e6, inds: ['restaurants'], kw: 'restaurant delivery food pizza dining' },
+    { id: 'life_moving', type: 'lifeEvent', name: 'Life event: Recently moved', size: 10e6, inds: ['homeservices', 'realestate', 'finance'], kw: 'home moving furniture apartment' },
+    { id: 'life_grad', type: 'lifeEvent', name: 'Life event: Graduating soon', size: 6e6, inds: ['education', 'finance'], kw: 'course degree career graduation' },
+    { id: 'life_wedding', type: 'lifeEvent', name: 'Life event: Getting married soon', size: 5e6, inds: ['travel', 'beauty', 'retail', 'finance'], kw: 'wedding bridal ring gift gifts' },
     { id: 'custom', type: 'custom', name: 'Custom segment: people who searched your keywords', size: 9e6, inds: 'all' },
     { id: 'rmk_all', type: 'remarketing', name: 'Your data: All website visitors (30 days)', size: 0, inds: 'all' },
     { id: 'rmk_engaged', type: 'remarketing', name: 'Your data: Engaged visitors / cart abandoners', size: 0, inds: 'all' }
@@ -103,21 +105,22 @@
   };
 
   var TOPICS = [
-    { id: 't_food', name: 'Food & Drink', size: 60e6, inds: ['restaurants', 'retail'] },
-    { id: 't_travel', name: 'Travel', size: 55e6, inds: ['travel'] },
-    { id: 't_edu', name: 'Jobs & Education', size: 45e6, inds: ['education'] },
-    { id: 't_health', name: 'Health', size: 50e6, inds: ['health'] },
-    { id: 't_fitness', name: 'Beauty & Fitness', size: 50e6, inds: ['health', 'beauty'] },
-    { id: 't_law', name: 'Law & Government', size: 20e6, inds: ['legal'] },
-    { id: 't_home', name: 'Home & Garden', size: 45e6, inds: ['homeservices', 'realestate', 'retail'] },
-    { id: 't_biz', name: 'Business & Industrial', size: 40e6, inds: ['b2b', 'finance'] },
-    { id: 't_finance', name: 'Finance', size: 40e6, inds: ['finance'] },
-    { id: 't_realestate', name: 'Real Estate', size: 25e6, inds: ['realestate'] },
-    { id: 't_autos', name: 'Autos & Vehicles', size: 40e6, inds: ['automotive'] },
-    { id: 't_shopping', name: 'Shopping', size: 70e6, inds: ['retail', 'beauty'] },
-    { id: 't_tech', name: 'Computers & Electronics', size: 60e6, inds: ['b2b', 'retail'] },
-    { id: 't_news', name: 'News', size: 150e6, inds: [] },
-    { id: 't_games', name: 'Games', size: 200e6, inds: [] }
+    { id: 't_food', name: 'Food & Drink', size: 60e6, inds: ['restaurants'], kw: 'food drink coffee tea recipe restaurant snack wine' },
+    { id: 't_travel', name: 'Travel', size: 55e6, inds: ['travel'], kw: 'travel trip vacation hotel camping hiking' },
+    { id: 't_edu', name: 'Jobs & Education', size: 45e6, inds: ['education'], kw: 'course degree school training jobs' },
+    { id: 't_health', name: 'Health', size: 50e6, inds: ['health'], kw: 'health medical clinic doctor wellness' },
+    { id: 't_fitness', name: 'Beauty & Fitness', size: 50e6, inds: ['health', 'beauty'], kw: 'beauty fitness makeup skincare gym yoga running' },
+    { id: 't_law', name: 'Law & Government', size: 20e6, inds: ['legal'], kw: 'law legal lawyer attorney' },
+    { id: 't_home', name: 'Home & Garden', size: 45e6, inds: ['homeservices', 'realestate'], kw: 'home garden furniture decor kitchen' },
+    { id: 't_biz', name: 'Business & Industrial', size: 40e6, inds: ['b2b', 'finance'], kw: 'business industrial software b2b' },
+    { id: 't_finance', name: 'Finance', size: 40e6, inds: ['finance'], kw: 'finance insurance loan bank' },
+    { id: 't_realestate', name: 'Real Estate', size: 25e6, inds: ['realestate'], kw: 'real estate home house property' },
+    { id: 't_autos', name: 'Autos & Vehicles', size: 40e6, inds: ['automotive'], kw: 'car auto vehicle' },
+    { id: 't_shopping', name: 'Shopping', size: 70e6, inds: ['retail', 'beauty'], kw: 'shop shopping store products apparel shoes gifts' },
+    { id: 't_tech', name: 'Computers & Electronics', size: 60e6, inds: ['b2b'], kw: 'computer electronics software tech gadget' },
+    { id: 't_outdoor', name: 'Outdoors & Hobbies', size: 45e6, inds: ['travel'], kw: 'outdoor outdoors camping hiking fishing hunting cooler coolers adventure gear' },
+    { id: 't_news', name: 'News', size: 150e6, inds: [], kw: '' },
+    { id: 't_games', name: 'Games', size: 200e6, inds: [], kw: '' }
   ];
 
   var CAMPAIGN_TYPES = {
@@ -247,23 +250,29 @@
   ];
 
   // Search-term modifiers used to expand phrase and broad match keywords.
+  // Search-term modifiers. "only" limits a modifier to products (online stores) or services, so a shoe
+  // brand never gets "book wool sneakers" and a law firm never gets "law firm sale".
   var MODIFIERS = {
     high: [
-      { w: 'near me', pos: 'suffix' }, { w: 'price', pos: 'suffix' }, { w: 'buy', pos: 'prefix' },
-      { w: 'best', pos: 'prefix' }, { w: 'online', pos: 'suffix' }, { w: 'cost', pos: 'suffix' },
-      { w: 'book', pos: 'prefix' }, { w: 'order', pos: 'prefix' }, { w: 'quote', pos: 'suffix' },
-      { w: 'deals', pos: 'suffix' }, { w: 'hire', pos: 'prefix' }, { w: 'top rated', pos: 'prefix' }
+      { w: 'near me', pos: 'suffix', only: 'local' }, { w: 'price', pos: 'suffix' }, { w: 'buy', pos: 'prefix', only: 'product' },
+      { w: 'best', pos: 'prefix' }, { w: 'online', pos: 'suffix' }, { w: 'cost', pos: 'suffix', only: 'service' },
+      { w: 'book', pos: 'prefix', only: 'service' }, { w: 'order', pos: 'prefix', only: 'product' }, { w: 'quote', pos: 'suffix', only: 'service' },
+      { w: 'deals', pos: 'suffix', only: 'product' }, { w: 'hire', pos: 'prefix', only: 'service' }, { w: 'top rated', pos: 'prefix' },
+      { w: 'sale', pos: 'suffix', only: 'product' }, { w: 'free shipping', pos: 'suffix', only: 'product' }
     ],
     low: [
-      { w: 'free', pos: 'prefix' }, { w: 'jobs', pos: 'suffix' }, { w: 'how to', pos: 'prefix' },
-      { w: 'diy', pos: 'prefix' }, { w: 'salary', pos: 'suffix' }, { w: 'what is', pos: 'prefix' },
-      { w: 'used', pos: 'prefix' }, { w: 'reddit', pos: 'suffix' }, { w: 'meaning', pos: 'suffix' },
-      { w: 'pdf', pos: 'suffix' }, { w: 'internship', pos: 'suffix' }, { w: 'wiki', pos: 'suffix' }
+      { w: 'free', pos: 'prefix' }, { w: 'jobs', pos: 'suffix' }, { w: 'how to', pos: 'prefix', only: 'service' },
+      { w: 'diy', pos: 'prefix' }, { w: 'salary', pos: 'suffix', only: 'service' }, { w: 'what is', pos: 'prefix', only: 'service' },
+      { w: 'used', pos: 'prefix', only: 'product' }, { w: 'reddit', pos: 'suffix' }, { w: 'meaning', pos: 'suffix', only: 'service' },
+      { w: 'pdf', pos: 'suffix', only: 'service' }, { w: 'internship', pos: 'suffix', only: 'service' }, { w: 'wiki', pos: 'suffix' },
+      { w: 'how to clean', pos: 'prefix', only: 'product' }, { w: 'review', pos: 'suffix', only: 'product' }, { w: 'cheap', pos: 'prefix', only: 'product' }
     ]
   };
+  var PRODUCT_INDUSTRIES = ['retail', 'beauty'];
+
 
   var HIGH_INTENT_WORDS = ['buy', 'price', 'prices', 'cost', 'near', 'order', 'book', 'hire', 'quote', 'deal', 'deals', 'sale', 'discount', 'coupon', 'shop', 'purchase', 'appointment', 'service', 'services', 'company', 'best', 'top', 'delivery', 'subscription', 'trial', 'demo', 'consultation', 'rates', 'for sale'];
-  var LOW_INTENT_WORDS = ['free', 'jobs', 'job', 'how', 'what', 'why', 'diy', 'salary', 'used', 'reddit', 'meaning', 'pdf', 'internship', 'wiki', 'definition', 'history', 'career', 'careers', 'download', 'template', 'example', 'examples', 'tutorial'];
+  var LOW_INTENT_WORDS = ['free', 'review', 'reviews', 'clean', 'jobs', 'job', 'how', 'what', 'why', 'diy', 'salary', 'used', 'reddit', 'meaning', 'pdf', 'internship', 'wiki', 'definition', 'history', 'career', 'careers', 'download', 'template', 'example', 'examples', 'tutorial'];
   var CTA_WORDS = ['buy', 'shop', 'get', 'book', 'call', 'start', 'try', 'order', 'sign up', 'join', 'learn', 'contact', 'schedule', 'request', 'claim', 'save', 'discover', 'explore', 'apply', 'download', 'subscribe', 'visit', 'reserve', 'enroll', 'register', 'compare', 'find'];
 
   // Baseline guidelines. Every scoring check and feedback item links back to one of these.
@@ -413,7 +422,7 @@
     INDUSTRIES: INDUSTRIES, AGE_BANDS: AGE_BANDS, AGE_SHARE: AGE_SHARE, GENDERS: GENDERS,
     LOCATIONS: LOCATIONS, AUDIENCES: AUDIENCES, AUDIENCE_TYPES: AUDIENCE_TYPES, TOPICS: TOPICS,
     CAMPAIGN_TYPES: CAMPAIGN_TYPES, GOALS: GOALS, BID_STRATEGIES: BID_STRATEGIES,
-    VIDEO_FORMATS: VIDEO_FORMATS, VIDEO_SUBTYPES: VIDEO_SUBTYPES, CHATGPT: CHATGPT, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
+    VIDEO_FORMATS: VIDEO_FORMATS, VIDEO_SUBTYPES: VIDEO_SUBTYPES, CHATGPT: CHATGPT, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, PRODUCT_INDUSTRIES: PRODUCT_INDUSTRIES, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
     LOW_INTENT_WORDS: LOW_INTENT_WORDS, CTA_WORDS: CTA_WORDS, GUIDELINES: GUIDELINES,
     GUIDE_INDEX: GUIDE_INDEX, TEMPLATES: TEMPLATES
   };

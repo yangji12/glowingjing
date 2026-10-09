@@ -164,6 +164,13 @@
   // Display/video conversion rate. Leads from people who were not searching are weaker:
   // keep cost per conversion at least 3x the Search benchmark, so Display never looks
   // better than Search for capturing demand (it is for reach and remarketing).
+  // Upper-funnel channels convert less efficiently than Search per dollar: a decent Display or YouTube
+  // campaign usually returns roughly half to three-quarters of Search's ROAS (tests/calibration.test.js).
+  var DISPLAY_EFF = 0.7;
+  // engaged-view conversions are worth more where a conversion is worth more, so high-CPA industries
+  // (legal, B2B, finance) were over-credited; low-CPA retail video is already near break-even
+  function videoEff(ind) { return U.clamp(1 - (ind.search.cpc / ind.search.cvr - 45) / 200, 0.6, 1); }
+
   function upperFunnelCvr(ind) {
     var searchCpa = ind.search.cpc / ind.search.cvr;
     return Math.min(ind.display.cvr, ind.display.cpc / (3 * searchCpa));
@@ -304,8 +311,11 @@
     var nHigh = kw.match === 'phrase' ? 2 : 3;
     var nLow = kw.match === 'phrase' ? 2 : 3;
     var out = [{ term: text, share: shares.core, kind: 'core' }];
-    var highs = pickN(D.MODIFIERS.high, nHigh, 'h:' + text);
-    var lows = pickN(D.MODIFIERS.low, nLow, 'l:' + text);
+    var product = D.PRODUCT_INDUSTRIES.indexOf(ctx.acc.industry) >= 0;
+    var local = ind.local || ctx.acc.serviceArea === 'local';
+    var fits = function (m) { return !m.only || (m.only === 'product' ? product : m.only === 'service' ? !product : local); };
+    var highs = pickN(D.MODIFIERS.high.filter(fits), nHigh, 'h:' + text);
+    var lows = pickN(D.MODIFIERS.low.filter(fits), nLow, 'l:' + text);
     highs.forEach(function (m) { out.push({ term: applyModifier(text, m), share: shares.high / nHigh, kind: 'high' }); });
     lows.forEach(function (m) { out.push({ term: applyModifier(text, m), share: shares.low / nLow, kind: 'low' }); });
     if (shares.related) {
@@ -591,6 +601,8 @@
       var dxClicks = Math.round(dxImpr * ind.display.ctr * 0.8);
       var dxConv = stochRound(dxClicks * ind.display.cvr * 0.6 * loc.cvr, rnd);
       var dx = { impressions: dxImpr, clicks: dxClicks, cost: dxBudget * (0.95 + 0.05 * rnd()), conversions: dxConv, value: dxConv * acc.value };
+      // CTR on the Search Network alone, so expansion impressions do not hide how the ads perform on searches
+      res.searchCtr = U.safeDiv(res.clicks, res.impressions);
       addMetrics(res, dx);
       res.displayExpansion = derive(Object.assign(emptyMetrics(), dx));
       res.quality += dxClicks * 0.25;
@@ -614,7 +626,7 @@
     (t.audiences || []).forEach(function (id) {
       var a = D.AUDIENCES.find(function (x) { return x.id === id; });
       if (!a) return;
-      var rel = a.inds === 'all' || a.inds.indexOf(ind) >= 0 ? 1 : 0.35;
+      var rel = M.segmentFit(a, ctx.state, ctx.vocab).rel;
       var size = a.size;
       if (a.type === 'custom') { rel = ctx.hasKeywords ? 0.9 : 0.55; }
       if (a.type === 'remarketing') {
@@ -627,7 +639,7 @@
     (t.topics || []).forEach(function (id) {
       var tp = D.TOPICS.find(function (x) { return x.id === id; });
       if (!tp) return;
-      segs.push({ key: tp.id, name: 'Topic: ' + tp.name, type: 'topic', size: tp.size, rel: tp.inds.indexOf(ind) >= 0 ? 0.85 : 0.25 });
+      segs.push({ key: tp.id, name: 'Topic: ' + tp.name, type: 'topic', size: tp.size, rel: M.segmentFit(tp, ctx.state, ctx.vocab).rel });
     });
     String(t.placementsText || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (p) {
       var r = M.relevance(p.replace(/[._\/-]+/g, ' '), ctx.vocab);
@@ -755,12 +767,12 @@
       var appClicks = appImpr * u.ctr * 2.2;
       var clicks = stochRound(webClicks + appClicks, rnd);
       var webShare = U.safeDiv(webClicks, webClicks + appClicks);
-      var cvr = u.cvr * smartBoost;
+      var cvr = u.cvr * smartBoost * DISPLAY_EFF;
       var conv = stochRound(clicks * webShare * cvr + clicks * (1 - webShare) * cvr * 0.05, rnd);
       var cost = impr * row.cpm / 1000;
       // view-through conversions: saw the ad, didn't click, converted later (50% credit in value)
       // tied to impression cost vs. a Search conversion, so they stay modest in every industry
-      var vt = stochRound(impr * 0.35 * (u.benchCpm / 1000) / (ind.search.cpc / ind.search.cvr) * (0.2 + 0.8 * u.seg.rel) * Math.sqrt(u.tp.cvr) * STRENGTH_CTR[u.strength], rnd);
+      var vt = stochRound(impr * 0.35 * (u.benchCpm / 1000) / (ind.search.cpc / ind.search.cvr) * (0.2 + 0.8 * u.seg.rel) * Math.sqrt(u.tp.cvr) * STRENGTH_CTR[u.strength] * DISPLAY_EFF, rnd);
       var value = (conv + vt * 0.5) * acc.value * (0.9 + 0.2 * rnd());
       var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv, value: value, viewThrough: vt, eligible: row.eligible };
       addMetrics(res, m);
@@ -988,8 +1000,8 @@
       var views = Math.round(impr * u.vr);
       var clicks = stochRound(impr * u.ctr * q, rnd);
       var cost = impr * row.p.cpi;
-      var conv = stochRound(clicks * u.cvr * smartBoost, rnd);
-      var evc = stochRound(impr * u.evcImpr * smartBoost * q, rnd);
+      var conv = stochRound(clicks * u.cvr * smartBoost * videoEff(ind), rnd);
+      var evc = stochRound(impr * u.evcImpr * smartBoost * q * videoEff(ind), rnd);
       var value = (conv + evc) * acc.value * (0.9 + 0.2 * rnd());
       var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv + evc, value: value, views: views, viewThrough: evc, eligible: row.eligible };
       addMetrics(res, m);
@@ -1146,7 +1158,7 @@
           var posF = 0.55 + 0.6 * absTop;
           var impr = vol * isRank;
           var ctr = ind.shopping.ctr * INTENT[t.intent].ctr * (0.35 + 0.65 * t.rel) * posF * U.clamp(Math.pow(1 / u.priceRatio, 2), 0.4, 1.8) *
-            (u.sale ? 1.2 : 1) * (0.6 + 0.6 * u.fq.score);
+            (u.sale ? 1.2 : 1) * (0.4 + 0.9 * u.fq.score);
           var clicks = impr * U.clamp(ctr, 0.0005, 0.2);
           var cpc = Math.min(bid, compRank * U.clamp(0.35 + 0.4 * Math.log(1 + r), 0.3, 1.05) / u.q + 0.01);
           // shoppers already saw price and image before clicking, so clicks are pre-qualified
@@ -1257,7 +1269,7 @@
       topics.push({ topic: chatPrompt(h.hint, intent), hint: h.hint, intent: intent, rel: U.clamp(0.25 + 0.75 * h.relevance * (0.35 + 0.65 * h.specificity), 0.05, 1), w: w, quality: h });
       if (h.words <= 2 || h.relevance < 0.4) {
         // broad hints drift into conversations that are only loosely related
-        topics.push({ topic: 'History and trivia about ' + h.hint, hint: h.hint, intent: 'info', rel: 0.12, w: w * (h.words <= 1 ? 0.9 : 0.4), offTarget: true });
+        topics.push({ topic: 'History and trivia about ' + h.hint, hint: h.hint, intent: 'info', rel: 0.12, w: w * (h.words <= 1 ? 0.9 : 0.4), offTarget: true, offReason: h.words <= 2 ? 'broad' : 'unrelated' });
       }
     });
     if (sens) {
@@ -1421,7 +1433,7 @@
       var tr = ctx.chatTopicMap.get(tk);
       if (!tr) {
         tr = Object.assign(emptyMetrics(), { campaignId: c.id, campaign: c.name, adGroupId: u.g.id, adGroup: u.g.name, topic: u.t.topic, hint: u.t.hint, intent: u.t.intent, relevance: u.t.rel,
-          status: u.t.sensitive ? 'Not eligible (sensitive)' : u.t.offTarget ? 'Off-target' : 'Matched' });
+          status: u.t.sensitive ? 'Not eligible (sensitive)' : u.t.offTarget ? 'Off-target' : 'Matched', offReason: u.t.offReason || '' });
         ctx.chatTopicMap.set(tk, tr);
         ctx.chatTopics.push(tr);
       }
@@ -1565,6 +1577,7 @@
   }
 
   function simulateRound(state) {
+    M.setBrand(state.account.businessName);
     var ctx = makeContext(state);
     var campaigns = [];
     state.campaigns.forEach(function (c) {
@@ -1651,7 +1664,7 @@
   }
 
   AdSim.engine = {
-    simulateRound: simulateRound, chatBench: chatBench, chatTopics: chatTopics, chatPrompt: chatPrompt, keywordPlanner: keywordPlanner, landingPageQuality: landingPageQuality,
+    simulateRound: simulateRound, chatBench: chatBench, displayBench: function (ind) { return { ctr: ind.display.ctr, cpc: ind.display.cpc, cvr: upperFunnelCvr(ind) * DISPLAY_EFF }; }, chatTopics: chatTopics, chatPrompt: chatPrompt, keywordPlanner: keywordPlanner, landingPageQuality: landingPageQuality,
     locationFactors: locationFactors, expandTerms: expandTerms, derive: derive, makeContext: makeContext,
     SMART: SMART
   };

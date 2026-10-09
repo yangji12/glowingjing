@@ -24,6 +24,7 @@
   }
 
   function evaluateSetup(state) {
+    M.setBrand(state.account.businessName);
     var acc = state.account;
     var ind = D.INDUSTRIES[acc.industry];
     var list = [];
@@ -36,7 +37,7 @@
       status: acc.conversionTracking ? 'pass' : 'fail',
       title: 'Conversion tracking (Google tag) installed',
       detail: acc.conversionTracking ? 'Conversions are measured and available to Smart Bidding and remarketing.' : 'Conversions are not measured. You cannot see which keywords make money, Smart Bidding cannot optimize, and remarketing lists stay empty.',
-      fix: 'Turn on "Google tag & conversion tracking" in Business setup.'
+      fix: 'Turn on "Conversion tracking installed" in Business & website.'
     });
     check(list, {
       id: 'acc-value', cat: 'Measurement', guide: 'ACC-2', weight: 3,
@@ -247,13 +248,13 @@
     ck({ id: 'tgt', cat: 'Keywords & targeting', guide: 'DSP-1', weight: 5, status: noneAtAll.length ? 'fail' : untargeted.length ? 'warn' : 'pass', title: 'Audience or content targeting is set', detail: noneAtAll.length ? 'Ad group(s) ' + noneAtAll.map(function (g) { return '"' + g.name + '"'; }).join(', ') + ' target the entire network.' : untargeted.length ? 'Some ad groups rely only on optimized targeting (no audience signal).' : 'Every ad group has audience/content targeting.', fix: 'Add in-market, custom or remarketing segments, or relevant topics/placements.' });
     var segs = [];
     groups.forEach(function (g) {
-      ((g.targeting || {}).audiences || []).forEach(function (id) { var a = D.AUDIENCES.find(function (x) { return x.id === id; }); if (a) segs.push({ name: a.name, rel: a.inds === 'all' || a.inds.indexOf(ind) >= 0 ? 1 : 0.35, rmk: a.type === 'remarketing' }); });
-      ((g.targeting || {}).topics || []).forEach(function (id) { var t = D.TOPICS.find(function (x) { return x.id === id; }); if (t) segs.push({ name: t.name, rel: t.inds.indexOf(ind) >= 0 ? 0.85 : 0.25 }); });
+      ((g.targeting || {}).audiences || []).forEach(function (id) { var a = D.AUDIENCES.find(function (x) { return x.id === id; }); if (a) segs.push({ name: a.name, rel: M.segmentFit(a, state).rel, rmk: a.type === 'remarketing' }); });
+      ((g.targeting || {}).topics || []).forEach(function (id) { var t = D.TOPICS.find(function (x) { return x.id === id; }); if (t) segs.push({ name: t.name, rel: M.segmentFit(t, state).rel }); });
     });
     if (segs.length) {
       var avg = U.sum(segs, function (s) { return s.rel; }) / segs.length;
       var bad = segs.filter(function (s) { return s.rel < 0.5; }).map(function (s) { return s.name; });
-      ck({ id: 'segrel', cat: 'Keywords & targeting', guide: 'DSP-1', weight: 3, status: avg >= 0.75 ? 'pass' : avg >= 0.5 ? 'warn' : 'fail', title: 'Audiences match your customers', detail: bad.length ? 'Weak fit for ' + D.INDUSTRIES[ind].name + ': ' + bad.slice(0, 4).join(', ') + '.' : 'Selected segments fit your industry.', fix: 'Choose in-market/affinity segments tied to your industry.' });
+      ck({ id: 'segrel', cat: 'Keywords & targeting', guide: 'DSP-1', weight: 3, status: avg >= 0.75 ? 'pass' : avg >= 0.5 ? 'warn' : 'fail', title: 'Audiences match your customers', detail: bad.length ? 'Weak fit for what you sell: ' + bad.slice(0, 4).join(', ') + '.' : 'Selected segments fit what you sell.', fix: 'Choose segments marked "Fits your business": they match the words in your description and products.' });
       var rmk = segs.filter(function (s) { return s.rmk; });
       if (rmk.length) {
         var pool = state.rounds.length ? (state.rounds[state.rounds.length - 1].analytics || {}).users || 0 : 0;
@@ -412,7 +413,7 @@
     if (type === 'chatgpt') return E.chatBench(ind, { competition: 1 });
     if (type === 'search') return ind.search;
     if (type === 'shopping') return ind.shopping;
-    return ind.display;
+    return E.displayBench(ind);
   }
 
   function wasteOf(result) {
@@ -512,7 +513,7 @@
 
     result.campaigns.forEach(function (c) {
       if (c.errors.length) add({ severity: 'critical', area: c.name, title: 'Campaign is not running', detail: c.errors.join('; ') + '.', action: 'Fix the issue in the campaign editor and run again.', guide: 'ACC-3' });
-      c.warnings.forEach(function (w) { add({ severity: 'warning', area: c.name, title: 'Setup problem that hurt this campaign', detail: w + '.', action: 'Fix it in the campaign editor; Google Ads would flag this as an error or limit the campaign.', guide: /bid|CPA|ROAS|CPM|tracking/i.test(w) ? 'BID-1' : /video|placement|Shorts|format/i.test(w) ? 'VID-6' : 'STR-2' }); });
+      c.warnings.forEach(function (w) { add({ severity: 'warning', area: c.name, title: w.split(/ \(|, which|; /)[0], detail: w + '. This setup problem lowered the results of this campaign.', action: 'Fix it in the campaign editor; Google Ads would flag this as an error or limit the campaign.', guide: /bid|CPA|ROAS|CPM|tracking/i.test(w) ? 'BID-1' : /video|placement|Shorts|format/i.test(w) ? 'VID-6' : 'STR-2' }); });
     });
     if (!acc.conversionTracking) {
       add({ severity: 'critical', area: 'Measurement', title: 'You are flying blind: conversions are not tracked', detail: 'In real Google Ads your conversion columns would be empty. The simulator estimates ' + t.conversions + ' conversions (' + money(t.value) + '), but you could not see which keywords or ads produced them.', action: 'Turn on Google tag & conversion tracking in Business setup.', guide: 'ACC-1' });
@@ -539,7 +540,7 @@
         });
       });
       var sugg = Object.keys(words).sort(function (a, b) { return words[b] - words[a]; }).slice(0, 8);
-      add({ severity: wasteCost / (t.cost || 1) > 0.1 ? 'warning' : 'opportunity', area: 'Keywords', title: money(wasteCost) + ' spent on ' + wasteTerms.length + ' irrelevant search terms with no conversions', detail: 'Examples: ' + wasteTerms.slice(0, 4).map(function (s) { return '"' + s.term + '" (' + money(s.cost) + ')'; }).join(', ') + '.', action: 'Add negative keywords: ' + (sugg.length ? sugg.join(', ') : 'see the Search terms report') + '. Use the "Add as negative" buttons in Reports → Search terms.', guide: 'KW-2' });
+      add({ severity: wasteCost / (t.cost || 1) > 0.1 ? 'warning' : 'opportunity', area: 'Keywords', title: money(wasteCost) + ' spent on ' + wasteTerms.length + ' irrelevant search terms with no conversions', detail: (function () { var byType = {}; wasteTerms.forEach(function (w) { byType[w.type] = (byType[w.type] || 0) + w.cost; }); var parts = Object.keys(byType).map(function (k) { return (k === 'shopping' ? 'Shopping ' : 'Search ') + money(byType[k]); }); return parts.length > 1 ? 'Split: ' + parts.join(', ') + '. ' : ''; })() + 'Examples: ' + wasteTerms.slice(0, 4).map(function (s) { return '"' + s.term + '" (' + money(s.cost) + ')'; }).join(', ') + '.', action: 'Add negative keywords: ' + (sugg.length ? sugg.join(', ') : 'see the Search terms report') + '. Use the "Add as negative" buttons in Reports → Search terms.', guide: 'KW-2' });
     }
     var goodTerms = result.searchTerms.filter(function (s) { return !s.excluded && s.conversions >= 2 && s.kind !== 'core' && s.cpa < acc.value * acc.margin; }).slice(0, 5);
     if (goodTerms.length) add({ severity: 'opportunity', area: 'Keywords', title: 'Converting search terms you could add as keywords', detail: goodTerms.map(function (s) { return '"' + s.term + '" (' + s.conversions + ' conv.)'; }).join(', ') + '.', action: 'Add them as [exact] or "phrase" keywords to control bids and ad text.', guide: 'KW-1' });
@@ -567,14 +568,17 @@
         else add({ severity: 'warning', area: c.name, title: 'Budget-limited but not profitable', detail: 'Lost ' + pct(c.lostIsBudget) + ' impression share to budget with ROAS ' + c.roas.toFixed(2) + '×.', action: 'Do not raise the budget yet — fix efficiency (negatives, bids, Quality Score) first.', guide: 'BID-3' });
       }
       if (c.lostIsRank > 0.5) add({ severity: 'warning', area: c.name, title: 'Losing ' + pct(c.lostIsRank) + ' of impressions to Ad Rank', detail: 'Your ad rank (bid × Quality Score × assets) is too low to show for most searches. Avg. Quality Score: ' + (c.avgQs ? c.avgQs.toFixed(1) : 'n/a') + '.', action: 'Improve Quality Score and assets first; raise bids on keywords that are profitable.', guide: 'QS-1' });
-      if (c.displayExpansion) add({ severity: 'warning', area: c.name, title: 'Display expansion spent ' + money(c.displayExpansion.cost) + ' at ' + (c.displayExpansion.conversions ? money(c.displayExpansion.cpa) + ' CPA' : 'no conversions'), detail: 'Search campaigns with Display expansion show image ads to people who were not searching.', action: 'Turn off Display Network in the campaign settings; build a dedicated Display campaign if needed.', guide: 'STR-1' });
+      if (c.displayExpansion) add({ severity: 'warning', area: c.name, title: 'Display expansion in your Search campaign: ' + money(c.displayExpansion.cost) + ' spent, ' + (c.displayExpansion.conversions ? Math.round(c.displayExpansion.conversions) + ' conversion' + (Math.round(c.displayExpansion.conversions) === 1 ? '' : 's') + ' (' + money(c.displayExpansion.cpa) + ' each)' : 'no conversions'), detail: 'Display expansion shows image ads to people who were not searching. It added ' + Math.round(c.displayExpansion.impressions).toLocaleString() + ' low-CTR impressions, which pulls the campaign\'s overall CTR down to ' + pct(c.ctr) + ' (Search Network alone: ' + pct(c.searchCtr != null ? c.searchCtr : c.ctr) + ').', action: 'Turn off Display Network in the campaign settings; build a dedicated Display campaign if needed.', guide: 'STR-1' });
     });
 
     // CTR / CVR vs benchmarks
     result.campaigns.forEach(function (c) {
       if (c.errors.length || c.type === 'video' || c.impressions < 200) return;
       var b = benchFor(ind, c.type);
-      if (c.ctr < b.ctr * 0.7) add({ severity: 'warning', area: c.name, title: 'CTR ' + pct(c.ctr) + ' is below the ' + ind.name + ' benchmark (' + pct(b.ctr) + ')', detail: c.type === 'search' ? 'Low CTR usually means ads do not match the searches, weak ad strength, missing assets, or low positions.' : c.type === 'display' ? 'Low CTR on Display usually means weak creative or poorly matched audiences.' : 'Low Shopping CTR usually means weak titles/images or uncompetitive prices.', action: c.type === 'search' ? 'Add keywords to headlines, add a CTA and offer, add sitelinks/callouts, tighten match types.' : c.type === 'display' ? 'Complete the responsive display ad (images + logo) and use in-market/custom audiences.' : 'Improve titles, add sale prices, fix overpriced products.', guide: c.type === 'search' ? 'AD-1' : c.type === 'display' ? 'DSP-2' : 'SHP-1' });
+      var isChat = c.type === 'chatgpt';
+      var ctr = c.searchCtr != null ? c.searchCtr : c.ctr;
+      var chName = { search: 'Search', display: 'Display', shopping: 'Shopping' }[c.type];
+      if (!isChat && ctr < b.ctr * 0.7) add({ severity: 'warning', area: c.name, title: chName + ' CTR ' + pct(ctr) + ' is below the ' + ind.name + ' ' + chName + ' benchmark (' + pct(b.ctr) + ')' + (c.searchCtr != null ? ' (Search Network only)' : ''), detail: c.type === 'search' ? 'Low CTR usually means ads do not match the searches, weak ad strength, missing assets, or low positions.' : c.type === 'display' ? 'Low CTR on Display usually means weak creative or poorly matched audiences.' : 'Low Shopping CTR usually means weak titles/images, uncompetitive prices, or low positions from low bids.', action: c.type === 'search' ? 'Add keywords to headlines, add a CTA and offer, add sitelinks/callouts, tighten match types.' : c.type === 'display' ? 'Complete the responsive display ad (images + logo) and use in-market/custom audiences.' : 'Improve product titles (70–150 characters with key attributes) and descriptions, add sale prices, fix overpriced products, and raise product group bids so products show in higher positions.', guide: c.type === 'search' ? 'AD-1' : c.type === 'display' ? 'DSP-2' : 'SHP-1' });
       if (c.clicks >= 50 && c.cvr < b.cvr * 0.6) add({ severity: 'warning', area: c.name, title: 'Conversion rate ' + pct(c.cvr) + ' is well below benchmark (' + pct(b.cvr) + ')', detail: 'Clicks are not turning into customers. Common causes: irrelevant search terms/audiences, homepage instead of a specific landing page, wrong locations.', action: 'Check Search terms/Audiences for bad traffic, deep-link to matching pages, and verify location targeting.', guide: 'LP-1' });
       if (c.cpa > 0 && c.cpa > acc.value && acc.goal !== 'awareness') add({ severity: 'warning', area: c.name, title: 'Cost per conversion (' + money(c.cpa) + ') is higher than a conversion is worth (' + money(acc.value) + ')', detail: 'Each conversion costs more than it brings in.', action: 'Lower bids, pause the worst keywords/audiences, or focus the budget on better campaigns.', guide: 'BID-2' });
     });
@@ -599,7 +603,12 @@
       var topics = (result.chatTopics || []).filter(function (t) { return t.campaignId === c.id; });
       var off = topics.filter(function (t) { return t.status === 'Off-target'; });
       var offCost = U.sum(off, function (t) { return t.cost; });
-      if (offCost > c.cost * 0.08) add({ severity: 'warning', area: c.name, title: money(offCost) + ' spent in loosely related conversations', detail: 'Vague hints like ' + U.uniq(off.map(function (t) { return '"' + t.hint + '"'; })).slice(0, 3).join(', ') + ' matched conversations such as "' + off[0].topic + '" (CTR ' + pct(U.safeDiv(U.sum(off, function (t) { return t.clicks; }), U.sum(off, function (t) { return t.impressions; }))) + ').', action: 'Replace single-word hints with specific situations and needs (4–14 words).', guide: 'CGPT-2' });
+      if (offCost > c.cost * 0.08) add({ severity: 'warning', area: c.name, title: money(offCost) + ' spent in loosely related conversations', detail: (function () {
+        var q = function (r) { return U.uniq(off.filter(function (t) { return t.offReason === r; }).map(function (t) { return '"' + t.hint + '"'; })).slice(0, 3).join(', '); };
+        var broad = q('broad'), unrel = q('unrelated');
+        return (broad ? 'Hints that are too broad (one or two words), such as ' + broad + ', ' : '') + (broad && unrel ? 'and hints ' : unrel ? 'Hints ' : '') + (unrel ? 'that do not mention what you sell, such as ' + unrel + ', ' : '') +
+          'matched conversations like "' + off[0].topic + '" (CTR ' + pct(U.safeDiv(U.sum(off, function (t) { return t.clicks; }), U.sum(off, function (t) { return t.impressions; }))) + ').';
+      })(), action: 'Rewrite them as specific needs that name your product or what it does, in 4–14 words ("comfortable wool sneakers for walking all day").', guide: 'CGPT-2' });
       var sens = topics.filter(function (t) { return t.status === 'Not eligible (sensitive)'; });
       if (sens.length) add({ severity: 'info', area: c.name, title: 'Some relevant conversations were not eligible for ads', detail: 'ChatGPT does not show ads near sensitive conversations (e.g., "' + sens[0].topic + '"). This is policy, not a setup problem.', action: 'Focus hints on practical, non-sensitive needs (scheduling, pricing, choosing a provider).', guide: 'CGPT-6' });
       if (c.impressions > 1000) {
@@ -672,7 +681,7 @@
 
     // top setup gaps (not already covered)
     setup.checks.filter(function (c) { return c.status !== 'pass'; }).sort(function (a, b) { return (b.weight - b.earned) - (a.weight - a.earned); }).slice(0, 6).forEach(function (c) {
-      add({ severity: c.status === 'fail' ? 'warning' : 'opportunity', area: 'Setup' + (c.campaign ? ' · ' + c.campaign : ''), title: c.title, detail: c.detail, action: c.fix, guide: c.guide, setup: true });
+      add({ severity: c.status === 'fail' ? 'warning' : 'opportunity', area: 'Setup' + (c.campaign ? ' · ' + c.campaign : ''), title: 'Not met yet: ' + c.title, detail: c.detail, action: c.fix, guide: c.guide, setup: true });
     });
 
     var order = { critical: 0, warning: 1, opportunity: 2, info: 3, success: 4 };

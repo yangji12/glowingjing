@@ -7,7 +7,7 @@
   var KEY = 'adsim.state.v1';
 
   var S = load();
-  var UI = { route: 'overview', params: [], combo: 0, device: 'desktop', round: null, reportTab: 'campaigns', newCamp: null, sort: {}, scan: { status: '' }, csv: '', stFilter: 'all', videoFiles: {}, stim: null };
+  var UI = { route: 'overview', params: [], combo: 0, device: 'desktop', round: null, reportTab: 'campaigns', newCamp: null, sort: {}, scan: { status: '' }, csv: '', stFilter: 'waste', videoFiles: {}, stim: null };
   var LIVE = {};
   var TABLES = {};
   var CHARTS = {};
@@ -329,6 +329,18 @@
     }).join('') + '</select></label>';
   }
 
+  // Example text in empty fields, built from the student's own business instead of a fixed demo
+  function examplePh(kind) {
+    var t = M.contentTopic(S) || 'your product';
+    var slug = t.replace(/[^a-z0-9]+/gi, '').toLowerCase();
+    return {
+      hints: 'choosing the best ' + t + ' for a beginner\nwhere to buy ' + t + ' online with fast shipping\n' + t + ' gift ideas for a friend',
+      negatives: 'One per line, e.g.\nfree\njobs\n"how to"\n[diy ' + t + ']',
+      keywords: t + '\n"' + t + ' online"\n[buy ' + t + ']',
+      agNegatives: '"used ' + t + '"\n"' + t + ' repair"',
+      placements: slug + 'blog.example\nyoutube.com/@' + slug + 'reviews'
+    }[kind];
+  }
   function typeBadge(t) { var ct = D.CAMPAIGN_TYPES[t]; return '<span class="type-badge t-' + t + '">' + ct.icon + ' ' + esc(ct.name) + '</span>'; }
 
   function needsBusiness() {
@@ -441,7 +453,7 @@
       field('Logo (optional)', imageField('account.logoUrl', 'logo'), 'Used as the default logo for new display ads.') +
       '</div>' +
       field('What do you sell? (description)', textarea('account.description', { rows: 3, placeholder: 'Describe your products/services, locations and selling points. The simulator uses these words to judge keyword relevance and to build your starter campaign.', aria: 'Business description' })) +
-      '<div class="tracking ' + (acc.conversionTracking ? 'on' : 'off') + '">' + checkbox('account.conversionTracking', '<b>Google tag & conversion tracking installed</b>', 'Measures purchases/leads, enables Smart Bidding and builds remarketing lists. ' + guideLink('ACC-1')) + '</div></div>';
+      '<div class="tracking ' + (acc.conversionTracking ? 'on' : 'off') + '">' + checkbox('account.conversionTracking', '<b>Conversion tracking installed</b> (Google tag and the ChatGPT ads measurement pixel)', 'Measures purchases/leads in every channel, enables Smart Bidding and builds remarketing lists. ' + guideLink('ACC-1')) + '</div></div>';
     var starter = '';
     if (!needsBusiness()) {
       starter = '<div class="card"><h3>3 · Starter campaign</h3>' +
@@ -451,9 +463,10 @@
         '<p class="help">Builds a draft from your ' + (demo ? 'demo business' : 'description and industry') + ' with Google-style defaults (broad match, network expansion on, few assets). It will run, but not well. Your job is to improve it using the feedback.</p></div>';
     }
     var bench = '<div class="card"><h3>Market benchmarks: ' + esc(ind.name) + '</h3><p class="muted">Approximate industry averages used by the simulator.</p><div class="table-wrap"><table class="data compact"><thead><tr><th></th><th class="num">CTR</th><th class="num">Avg. CPC</th><th class="num">Conv. rate</th><th class="num">Cost / conv.</th></tr></thead><tbody>' +
-      [['Search', ind.search], ['Display', ind.display], ['Shopping', ind.shopping]].map(function (x) {
+      [['Search', ind.search], ['Display', E.displayBench(ind)], ['Shopping', ind.shopping]].map(function (x) {
         return '<tr><td>' + x[0] + '</td><td class="num">' + fPct(x[1].ctr) + '</td><td class="num">' + fMoney(x[1].cpc) + '</td><td class="num">' + fPct(x[1].cvr) + '</td><td class="num">' + fMoney(x[1].cpc / x[1].cvr) + '</td></tr>';
-      }).join('') + '<tr><td>YouTube</td><td colspan="4">CPV ≈ ' + fMoney(ind.video.cpv) + ', view rate ≈ ' + fPct(ind.video.viewRate, 0) + '</td></tr></tbody></table></div></div>';
+      }).join('') + (function () { var cb = E.chatBench(ind, { competition: 1 }); return '<tr><td>ChatGPT ads</td><td class="num">' + fPct(cb.ctr) + '</td><td class="num">' + fMoney(cb.cpc) + '</td><td class="num">' + fPct(cb.cvr) + '</td><td class="num">' + fMoney(cb.cpc / cb.cvr) + '</td></tr>'; })() +
+      '<tr><td>YouTube</td><td colspan="4" class="wrap">CPV ≈ ' + fMoney(ind.video.cpv) + ', view rate ≈ ' + fPct(ind.video.viewRate, 0) + '</td></tr></tbody></table></div></div>';
     return h + '<div class="grid-2-1"><div>' + startCard + bizCard + starter + '</div><div>' + bench + setupSnapshot() + '</div></div>';
   }
 
@@ -653,7 +666,7 @@
         field('Landing page query parameters', '<div class="row">' + input(gb + '.queryParams', { placeholder: 'campaign_id={campaign_id}&ad_id={ad_id}', cls: 'grow' }) + btn('Insert tracking template', 'chatTemplate', gb, 'small ghost') + '</div>',
           'Optional. Appends missing query parameters. Supported template values: ' + C.templateValues.join(', ') + '. {oppref} is the click reference the Conversions API uses to match conversions.') +
         field('Default ad destination URL', input(gb + '.defaultUrl', { inputType: 'url', placeholder: S.account.website }), 'Used for new ads in this ad group.') +
-        field('Context hints (optional) — one per line', textarea(gb + '.hintsText', { rows: 6, placeholder: 'choosing a beginner espresso machine under $300\nbest coffee subscription to give as a gift\nhow to make cafe-quality pour over at home' }),
+        field('Context hints (optional) — one per line', textarea(gb + '.hintsText', { rows: 6, placeholder: examplePh('hints') }),
           'Describe the conversations, topics or needs where your product is relevant. These guide matching but are not exact-match targeting rules.') +
         live('hints-' + g.id, function () { return hintAnalysis(g); });
       if (feed) {
@@ -768,7 +781,7 @@
         return field(d.charAt(0).toUpperCase() + d.slice(1), input(base + '.devices.' + d, { type: 'number', step: 5, min: -100, maxVal: 900 }), '−100 excludes the device');
       }).join('') + '</div></div>';
     if (c.type === 'search' || c.type === 'shopping') {
-      h += '<div class="card"><h3>Campaign negative keywords ' + guideLink('KW-2') + '</h3>' + textarea(base + '.negativesText', { rows: 5, placeholder: 'One per line, e.g.\nfree\njobs\n"how to"\n[diy coffee]' }) + '<p class="help">Blocks searches containing these words. Use "phrase" or [exact] notation for narrower negatives. Negatives do not match close variants — add plurals separately.</p></div>';
+      h += '<div class="card"><h3>Campaign negative keywords ' + guideLink('KW-2') + '</h3>' + textarea(base + '.negativesText', { rows: 5, placeholder: examplePh('negatives') }) + '<p class="help">Blocks searches containing these words. Use "phrase" or [exact] notation for narrower negatives. Negatives do not match close variants — add plurals separately.</p></div>';
     }
     return h;
   }
@@ -796,19 +809,22 @@
       var gb = base + '.adGroups.' + gi;
       h += '<div class="card"><div class="card-head"><h3>Ad group ' + (gi + 1) + '</h3>' + ((c.adGroups.length > 1) ? btn('Remove', 'removeAdGroup', [c.id, g.id], 'small ghost danger') : '') + '</div><div class="grid2">' +
         field('Ad group name', input(gb + '.name')) + (manual ? field('Default max CPC ($)', input(gb + '.defaultBid', { type: 'number', step: 0.05, min: 0 })) : '<div></div>') + '</div>' +
-        '<div class="grid2">' + field('Keywords (one per line) ' + guideLink('STR-2'), textarea(gb + '.keywordsText', { rows: 8, placeholder: 'coffee beans\n"whole bean coffee"\n[buy coffee beans online]' })) +
-        field('Ad group negative keywords', textarea(gb + '.negativesText', { rows: 8, placeholder: 'decaf\n"instant coffee"' })) + '</div>' +
+        '<div class="grid2">' + field('Keywords (one per line) ' + guideLink('STR-2'), textarea(gb + '.keywordsText', { rows: 8, placeholder: examplePh('keywords') })) +
+        field('Ad group negative keywords', textarea(gb + '.negativesText', { rows: 8, placeholder: examplePh('agNegatives') })) + '</div>' +
         '<h4>Keyword Planner</h4>' + live('planner-' + g.id, function () { return plannerTable(g); }) + '</div>';
     });
     h += btn('＋ Add ad group', 'addAdGroup', c.id, 'primary');
     return h;
   }
 
+  function fitChip(f) {
+    return f.key === 'strong' ? '<span class="chip good" title="Matches: ' + esc((f.hits || []).join(', ')) + '">Fits your business</span>' : f.key === 'industry' ? '<span class="chip info">Fits your industry</span>' : '<span class="chip neutral">Weak fit</span>';
+  }
   function audienceFit(a) {
     var ind = S.account.industry;
     if (a.type === 'remarketing') return S.account.conversionTracking ? '<span class="chip good">Your visitors</span>' : '<span class="chip critical">Needs tag</span>';
     if (a.type === 'custom') return '<span class="chip good">Built from your keywords</span>';
-    return a.inds.indexOf(ind) >= 0 ? '<span class="chip good">Fits your industry</span>' : '<span class="chip neutral">Weak fit</span>';
+    return fitChip(M.segmentFit(a, S));
   }
 
   function targetingEditor(c, base) {
@@ -822,14 +838,14 @@
       var aud = Object.keys(groups).map(function (t) {
         return '<div class="aud-group"><p class="lbl">' + esc(D.AUDIENCE_TYPES[t].label) + ' <small class="muted">(' + D.AUDIENCE_TYPES[t].funnel + ')</small></p>' + groups[t].map(function (a) { return arrayCheck(tb + '.audiences', a.id, esc(a.name.replace(/^[^:]+: /, '')), ' ' + audienceFit(a)); }).join('') + '</div>';
       }).join('');
-      var topics = D.TOPICS.map(function (tp) { return arrayCheck(tb + '.topics', tp.id, esc(tp.name), tp.inds.indexOf(S.account.industry) >= 0 ? ' <span class="chip good">Fits</span>' : ''); }).join('');
+      var topics = D.TOPICS.map(function (tp) { return arrayCheck(tb + '.topics', tp.id, esc(tp.name), (function (f) { return f.key === 'strong' ? ' <span class="chip good">Fits your business</span>' : f.key === 'industry' ? ' <span class="chip info">Fits your industry</span>' : ''; })(M.segmentFit(tp, S))); }).join('');
       var ages = D.AGE_BANDS.map(function (a, i) { return checkbox(tb + '.ages.' + i, a); }).join('');
       var genders = D.GENDERS.map(function (a, i) { return checkbox(tb + '.genders.' + i, a); }).join('');
       h += '<div class="card"><div class="card-head"><h3>Ad group ' + (gi + 1) + '</h3>' + (c.adGroups.length > 1 ? btn('Remove', 'removeAdGroup', [c.id, g.id], 'small ghost danger') : '') + '</div><div class="grid2">' +
         field('Ad group name', input(gb + '.name')) + (manual ? field('Max CPC ($)', input(gb + '.defaultBid', { type: 'number', step: 0.05, min: 0 })) : '<div></div>') + '</div>' +
         '<h4>Audience segments</h4><div class="aud-grid">' + aud + '</div>' +
         '<h4>Content: topics</h4><div class="check-grid">' + topics + '</div>' +
-        field('Content: placements (one website or YouTube channel per line)', textarea(tb + '.placementsText', { rows: 3, placeholder: 'coffeeblog.example\nyoutube.com/@baristaskills' })) +
+        field('Content: placements (one website or YouTube channel per line)', textarea(tb + '.placementsText', { rows: 3, placeholder: examplePh('placements') })) +
         '<h4>Demographics ' + guideLink('TGT-3') + '</h4><div class="grid2"><div><p class="lbl">Age</p><div class="check-grid">' + ages + '</div></div><div><p class="lbl">Gender</p>' + genders + '</div></div>' +
         '<h4>Optimized targeting</h4>' + checkbox(tb + '.optimized', 'Use optimized targeting', 'Lets Google show ads to people beyond your segments who are likely to convert. More reach, less control.') + '</div>';
     });
@@ -971,12 +987,18 @@
     return M.videoAdCheck(ad, M.videoSubtype(c), c.videoSurfaces).formats;
   }
 
-  function videoContexts(c, ad, path) {
+  function videoContexts(c, ad, path, limit) {
     var formats = adFormats(c, ad);
     if (!formats.length) return '<p class="muted">This video is too long for ' + esc(D.VIDEO_SUBTYPES[M.videoSubtype(c)].name) + '. Shorten it to see previews.</p>';
     var ids = YT.contextsFor(formats, c.videoSurfaces);
     if (!ids.length) return '<p class="muted">No selected placement shows these formats. Choose placements in Settings.</p>';
-    return '<div class="ytm-gallery">' + ids.map(function (id) { return YT.thumbnail(id, ad, S.account, formats, S, { videoSrc: UI.videoFiles[path] }, 520); }).join('') + '</div>';
+    var thumb = function (id) { return YT.thumbnail(id, ad, S.account, formats, S, { videoSrc: UI.videoFiles[path] }, 520); };
+    if (limit && ids.length > limit) {
+      return '<div class="ytm-gallery">' + ids.slice(0, limit).map(thumb).join('') + '</div>' +
+        '<details class="fb-fold"><summary>Show ' + (ids.length - limit) + ' more placements</summary><div class="ytm-gallery">' + ids.slice(limit).map(thumb).join('') + '</div></details>' +
+        '<p class="help">All placements side by side: <a href="#/previews">Ad previews</a>.</p>';
+    }
+    return '<div class="ytm-gallery">' + ids.map(thumb).join('') + '</div>';
   }
 
   function videoAds(c, base) {
@@ -1005,6 +1027,7 @@
           (UI.videoFiles[ab] ? '<span class="good-text">✓ Playing in the previews (this browser session only)</span>' + btn('Remove', 'clearVideoFile', ab, 'small ghost danger') : '<span class="muted">Plays inside the mock-ups; not saved or uploaded.</span>') + '</div>' +
           field('YouTube video link (optional)', input(ab + '.videoUrl', { placeholder: 'https://www.youtube.com/watch?v=…' }), 'In Google Ads your video must be on YouTube. Here the link is for your records.') +
           '<div class="grid2">' + field((audio ? 'Audio' : 'Video') + ' length (seconds)', input(ab + '.length', { type: 'number', min: 1, step: 1, rerender: true })) + (audio ? '<div></div>' : field('Aspect ratio', select(ab + '.aspect', [['16:9', '16:9 horizontal'], ['9:16', '9:16 vertical (Shorts)'], ['1:1', '1:1 square']]))) + '</div>' +
+          (onShorts && ad.aspect === '16:9' ? '<div class="warn-card inline-warn"><p><b>Horizontal video in the Shorts feed:</b> it shows small with black bars. Upload a vertical 9:16 version, or stop showing on Shorts.</p>' + btn('Use 9:16 vertical', 'setPathVal', [ab + '.aspect', '9:16'], 'small primary') + ' ' + btn('Turn off Shorts placement', 'dropSurface', [c.id, 'shorts'], 'small') + '</div>' : '') +
           '<p class="lbl">Runs as</p>' + fmtChips +
           imageField(ab + '.thumbnail', 'thumb') + (onShorts || ad.aspect === '9:16' ? imageField(ab + '.verticalThumb', 'vthumb') : '') +
           '<p class="lbl">Creative checklist: ABCD ' + guideLink('VID-5') + '</p>' + abcd +
@@ -1016,7 +1039,7 @@
             var v = M.videoAdCheck(ad, subKey, surfaces);
             return strengthMeter({ label: v.label === 'Not eligible' ? 'Incomplete' : v.label, issues: v.issues.slice(0, 6), errors: v.errors }) + abcdPanel(ad);
           }) +
-          '<p class="lbl">Where it shows (mock-ups)</p>' + live('prev-' + g.id + '-' + ai, function () { return videoContexts(c, ad, ab); }) + '</div></div></div>';
+          '<p class="lbl">Where it shows (mock-ups)</p>' + live('prev-' + g.id + '-' + ai, function () { return videoContexts(c, ad, ab, 2); }) + '</div></div></div>';
       });
       if ((g.ads || []).length < (seq ? 5 : 3)) h += btn(seq ? '＋ Add step ' + ((g.ads || []).length + 1) + ' to the sequence' : '＋ Add another ' + (audio ? 'audio' : 'video') + ' ad to ' + esc(g.name), 'addAd', [c.id, g.id], 'ghost');
     });
@@ -1072,11 +1095,13 @@
     var h = header('Product feed', 'Your product data (like Google Merchant Center). Shopping ads are built entirely from it.', btn('＋ Add product', 'addProduct', null, 'primary'));
     h += '<div class="card info-card">Title formula: <b>Brand + Product type + Key attributes</b> (size, color, material, model). 70–150 characters; the first ~70 are visible. Include GTIN, a good image, accurate price and availability. ' + guideLink('SHP-1') + ' ' + guideLink('SHP-2') + '</div>';
     if (!S.products.length) h += '<div class="card empty-state"><p>No products yet. Add products manually or paste CSV below.</p></div>';
+    var noImg = S.products.filter(function (p) { return !p.imageUrl; }).length;
+    if (noImg) h += '<div class="card warn-card"><p><b>' + noImg + ' product(s) have no image</b> and are disapproved: Shopping and product ads need an image.</p>' + btn('Use generated artwork for all ' + noImg, 'genAllProductImages', null, 'primary small') + ' <span class="muted">or upload a photo on each product.</span></div>';
     S.products.forEach(function (p, i) {
       var pb = 'products.' + i;
       h += '<div class="card product"><div class="card-head"><h3>Product ' + (i + 1) + '</h3>' + btn('Remove', 'removeProduct', p.id, 'small ghost danger') + '</div><div class="ad-editor"><div>' +
         field('Title', input(pb + '.title', { max: 150 })) +
-        '<div class="grid3">' + field('Price ($)', input(pb + '.price', { type: 'number', step: 0.01, min: 0 })) + field('Sale price ($, optional)', input(pb + '.salePrice', { type: 'number', step: 0.01, min: 0 })) + field('Typical competitor price ($)', input(pb + '.marketPrice', { type: 'number', step: 0.01, min: 0 }), 'Used to judge price competitiveness.') + '</div>' +
+        '<div class="grid3">' + field('Price ($)', input(pb + '.price', { type: 'number', step: 0.01, min: 0 })) + field('Sale price ($, optional)', input(pb + '.salePrice', { type: 'number', step: 0.01, min: 0 })) + field('Typical market price ($, optional)', input(pb + '.marketPrice', { type: 'number', step: 0.01, min: 0 }), 'What similar products usually cost at other stores. Shopping compares your price with it. Leave 0 if you do not know.') + '</div>' +
         '<div class="grid3">' + field('Brand', input(pb + '.brand')) + field('GTIN (barcode)', input(pb + '.gtin', { placeholder: '12–14 digits' })) + field('Category / product type', input(pb + '.category')) + '</div>' +
         '<div class="grid2">' + field('Product image', imageField(pb + '.imageUrl', 'product')) + field('Product page link', input(pb + '.link', { placeholder: '/products/…' })) + '</div>' +
         field('Availability', select(pb + '.availability', [['in_stock', 'In stock'], ['out_of_stock', 'Out of stock'], ['preorder', 'Preorder']])) +
@@ -1089,7 +1114,7 @@
             '<div class="shop-row single">' + P.shoppingCard(p, S.account) + '</div>';
         }) + '</div></div></div>';
     });
-    h += '<div class="card"><h3>Bulk import (CSV)</h3><p class="help">Columns: title, price, brand, gtin, category, imageUrl, link, description, salePrice, marketPrice. First row may be a header.</p><textarea id="csv-box" rows="4" placeholder="title,price,brand,gtin,category,imageUrl,link,description">' + esc(UI.csv) + '</textarea>' + btn('Import CSV rows', 'importCsv', null, 'small') + '</div>';
+    h += '<div class="card"><h3>Bulk import (CSV)</h3><p class="help">Columns: title, price, brand, gtin, category, imageUrl, link, description, salePrice, marketPrice, availability. With a header row, columns can be in any order and missing ones are left blank. Availability: in_stock, out_of_stock or preorder (default in_stock).</p><textarea id="csv-box" rows="4" placeholder="title,price,brand,gtin,category,imageUrl,link,description">' + esc(UI.csv) + '</textarea>' + btn('Import CSV rows', 'importCsv', null, 'small') + '</div>';
     return h;
   }
 
@@ -1211,7 +1236,7 @@
         { key: 'cost', label: 'Spend', num: true, fmt: function (x) { return fMoney0(x.cost) + '<small class="muted block">' + fPct(x.shareSpend, 0) + ' of total</small>'; } },
         { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
         { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
-        { key: 'ctr', label: 'CTR', num: true, fmt: function (x) { return vsBench(x.ctr, x.bench.ctr, function (v) { return fPct(v); }); } },
+        { key: 'ctr', label: 'CTR', num: true, title: 'Search: Search Network only (without Display expansion)', fmt: function (x) { return vsBench(x.benchCtr, x.bench.ctr, function (v) { return fPct(v); }) + (x.expansionImpr ? '<small class="muted block">' + fPct(x.ctr) + ' incl. expansion</small>' : ''); } },
         { key: 'cpc', label: 'Avg. CPC', num: true, fmt: function (x) { return x.clicks ? vsBench(x.cpc, x.bench.cpc, fMoney, true) : '—'; } },
         { key: 'cpm', label: 'Avg. CPM', num: true, fmt: function (x) { return fMoney(x.cpm); } },
         { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions) + (r.tracked ? '<small class="muted block">' + fPct(x.shareConv, 0) + ' of total</small>' : ''); } },
@@ -1378,10 +1403,13 @@
     }
     if (tab === 'terms') {
       var terms = r.searchTerms;
-      if (UI.stFilter === 'waste') terms = terms.filter(function (s) { return !s.excluded && s.conversions === 0 && s.cost > 0; });
-      if (UI.stFilter === 'converting') terms = terms.filter(function (s) { return s.conversions > 0; });
-      body = '<p class="help">What people actually searched before seeing your ad. Add irrelevant terms as negatives; add converting ones as keywords. ' + guideLink('KW-2') + '</p>' +
-        '<div class="row filter">Show: ' + [['all', 'All'], ['waste', 'Spend with no conversions'], ['converting', 'Converting']].map(function (f) { return btn(f[1], 'stFilter', f[0], 'small ' + (UI.stFilter === f[0] ? 'primary' : 'ghost')); }).join('') + '</div>' +
+      var stf = UI.stFilter || 'waste';
+      var isWaste = function (s) { return !s.excluded && s.conversions === 0 && s.cost > 0 && (s.intent === 'low' || s.relevance < 0.35); };
+      if (stf === 'waste') terms = terms.filter(isWaste);
+      if (stf === 'nosales') terms = terms.filter(function (s) { return !s.excluded && s.conversions === 0 && s.cost > 0; });
+      if (stf === 'converting') terms = terms.filter(function (s) { return s.conversions > 0; });
+      body = '<p class="help">What people actually searched before seeing your ad. Add irrelevant terms as negatives; add converting ones as keywords. Never block a term that converts or that is your own keyword. ' + guideLink('KW-2') + '</p>' +
+        '<div class="row filter">Show: ' + [['waste', 'Wasted spend (irrelevant, no conversions)'], ['nosales', 'Any spend with no conversions'], ['converting', 'Converting'], ['all', 'All']].map(function (f) { return btn(f[1], 'stFilter', f[0], 'small ' + (stf === f[0] ? 'primary' : 'ghost')); }).join('') + '</div>' +
         dataTable('rep-terms', [
           { key: 'term', label: 'Search term', fmt: function (x) { return '<b>' + esc(x.term) + '</b>' + (x.excluded ? ' <span class="chip neutral">Excluded by negative</span>' : ''); } },
           { key: 'keyword', label: 'Matched keyword', fmt: function (x) { return esc(x.keyword); } },
@@ -1394,9 +1422,9 @@
             var c = campById(x.campaignId);
             if (!c) return '';
             var already = U.parseKeywordList(c.negativesText).some(function (n) { return n.text === x.term; });
-            return (already ? '<span class="muted">negative added</span>' : btn('− Negative', 'addNegative', [x.campaignId, x.term], 'small ghost')) + (x.type === 'search' && x.adGroupId ? btn('＋ Keyword', 'addKeyword', [x.campaignId, x.adGroupId, x.term], 'small ghost') : '');
+            return (already ? '<span class="muted">negative added</span>' : btn('− Negative', 'addNegative', [x.campaignId, x.term, Math.round(x.conversions), x.term === x.keyword ? 1 : 0], 'small ghost' + (x.conversions > 0 || x.term === x.keyword ? ' danger' : ''))) + (x.type === 'search' && x.adGroupId ? btn('＋ Keyword', 'addKeyword', [x.campaignId, x.adGroupId, x.term], 'small ghost') : '');
           }, csv: function () { return ''; }
-        }]), terms, { rowClass: function (x) { return x.excluded ? 'dim' : (!x.conversions && x.cost > 0 && (x.intent === 'low' || x.relevance < 0.35)) ? 'waste' : ''; }, empty: 'No search terms (Search/Shopping campaigns only).' });
+        }]), terms, { rowClass: function (x) { return x.excluded ? 'dim' : isWaste(x) ? 'waste' : ''; }, empty: stf === 'waste' ? 'No wasted spend on irrelevant search terms. Nice work.' : 'No search terms here (Search and Shopping campaigns only).' });
     }
     if (tab === 'audiences') {
       body = '<h3 class="section">Audience & content segments</h3>' + dataTable('rep-aud', [
@@ -1555,19 +1583,26 @@
       sc.categories.filter(function (c) { return c.score != null; }).map(function (c) { return barRow(esc(c.name), c.score, 100, c.score + '%', c.score >= 80 ? 'good' : c.score >= 50 ? 'warning' : 'critical'); }).join('') + '</div>' +
       '<div class="card"><h3>Performance score breakdown</h3><p class="muted">How your results compare to benchmarks and your profit goal.</p>' +
       sc.performanceParts.map(function (p) { return barRow(esc(p.name) + '<small>' + esc(p.note) + '</small>', p.pts, p.max, p.pts + ' / ' + p.max, p.pts / p.max >= 0.75 ? 'good' : p.pts / p.max >= 0.45 ? 'warning' : 'critical'); }).join('') + '</div></div>';
-    var groups = ['critical', 'warning', 'opportunity', 'info', 'success'];
-    h += '<div class="card"><h3>Feedback & next steps</h3>' + groups.map(function (g) {
-      var items = r.feedback.filter(function (f) { return f.severity === g; });
-      return items.length ? '<h4>' + SEV[g][2] + ' (' + items.length + ')</h4>' + items.map(feedbackItem).join('') : '';
-    }).join('') + '</div>';
-    h += setupChecklist(r.setupChecks, 'Setup checklist at round ' + r.round);
+    // Results first; setup-check reminders and lower-priority notes fold away so the page stays readable
+    var results = r.feedback.filter(function (f) { return !f.setup; });
+    var setupFb = r.feedback.filter(function (f) { return f.setup; });
+    var fold = function (title, items, open) { return items.length ? '<details class="fb-fold"' + (open ? ' open' : '') + '><summary>' + title + ' (' + items.length + ')</summary>' + items.map(feedbackItem).join('') + '</details>' : ''; };
+    var top = results.filter(function (f) { return f.severity === 'critical' || f.severity === 'warning'; });
+    var opp = results.filter(function (f) { return f.severity === 'opportunity'; });
+    h += '<div class="card"><h3>Feedback & next steps</h3><p class="help">Start at the top: problems that cost you money this round, then opportunities. Setup reminders and notes are folded below.</p>' +
+      (top.length ? '<h4>Fix these first (' + top.length + ')</h4>' + top.map(feedbackItem).join('') : '<p class="good-text">✓ No critical problems or warnings in the results.</p>') +
+      (opp.length ? '<h4>Opportunities (' + opp.length + ')</h4>' + opp.slice(0, 4).map(feedbackItem).join('') + fold('Show ' + (opp.length - 4) + ' more opportunities', opp.slice(4)) : '') +
+      fold('Setup checks not met yet', setupFb) +
+      fold('Notes', results.filter(function (f) { return f.severity === 'info'; })) +
+      fold('What went well', results.filter(function (f) { return f.severity === 'success'; }), true) + '</div>';
+    h += '<details class="card fb-fold"><summary><b>Full setup checklist at round ' + r.round + '</b> (' + r.setupChecks.filter(function (x) { return x.status === 'pass'; }).length + ' of ' + r.setupChecks.length + ' passing)</summary>' + setupChecklist(r.setupChecks, '').replace(/^<div class="card">/, '<div>') + '</details>';
     return h;
   }
 
   function setupChecklist(checks, title) {
     var byCat = {};
     checks.forEach(function (c) { (byCat[c.cat] = byCat[c.cat] || []).push(c); });
-    return '<div class="card"><h3>' + esc(title) + '</h3>' + SC.CATS.filter(function (c) { return byCat[c]; }).map(function (cat) {
+    return '<div class="card">' + (title ? '<h3>' + esc(title) + '</h3>' : '') + SC.CATS.filter(function (c) { return byCat[c]; }).map(function (cat) {
       var items = byCat[cat];
       var pass = items.filter(function (x) { return x.status === 'pass'; }).length;
       return '<details' + (pass < items.length ? ' open' : '') + '><summary><b>' + esc(cat) + '</b> — ' + pass + '/' + items.length + ' passing</summary>' + items.map(function (x) {
@@ -1772,6 +1807,7 @@
   };
 
   function render(keepScroll) {
+    M.setBrand(S.account.businessName);
     var y = window.scrollY;
     LIVE = {};
     CHARTS = {};
@@ -1952,17 +1988,38 @@
     removeProductGroup: function (el, args) { campById(args[0]).productGroups.splice(args[1], 1); save(); render(true); },
     addProduct: function () { S.products.push(M.newProduct()); save(); render(true); },
     removeProduct: function (el, id) { S.products = S.products.filter(function (p) { return p.id !== id; }); save(); render(true); },
+    setPathVal: function (el, args) { setPath(S, args[0], args[1]); save(); render(true); },
+    dropSurface: function (el, args) {
+      var c = campById(args[0]);
+      if (!c) return;
+      c.videoSurfaces = (c.videoSurfaces || []).filter(function (x) { return x !== args[1]; });
+      save(); render(true); toast('Shorts removed from this campaign\'s placements.');
+    },
+    genAllProductImages: function () {
+      var n = 0;
+      S.products.forEach(function (p) { if (!p.imageUrl) { p.imageUrl = 'generated'; n++; } });
+      save(); render(true); toast('Generated artwork added to ' + n + ' product(s).');
+    },
     importCsv: function () {
       var txt = document.getElementById('csv-box').value;
       UI.csv = txt;
       var rows = parseCsv(txt);
-      if (rows.length && /title/i.test(rows[0][0])) rows.shift();
+      var COLS = ['title', 'price', 'brand', 'gtin', 'category', 'imageurl', 'link', 'description', 'saleprice', 'marketprice', 'availability'];
+      var ALIAS = { image: 'imageurl', image_link: 'imageurl', imagelink: 'imageurl', url: 'link', sale_price: 'saleprice', market_price: 'marketprice', competitorprice: 'marketprice', product_type: 'category', type: 'category' };
+      var order = COLS;
+      if (rows.length && rows[0].some(function (x) { return /^\s*title\s*$/i.test(x); })) {
+        order = rows.shift().map(function (x) { var k = x.trim().toLowerCase().replace(/\s+/g, ''); return ALIAS[k] || k; });
+      }
+      var col = function (r, k) { var i = order.indexOf(k); return i >= 0 ? (r[i] || '').trim() : ''; };
       var n = 0;
       rows.forEach(function (r) {
-        if (!r[0]) return;
+        if (!col(r, 'title')) return;
         var p = M.newProduct();
-        p.title = r[0]; p.price = parseFloat(r[1]) || 0; p.brand = r[2] || ''; p.gtin = r[3] || ''; p.category = r[4] || ''; p.imageUrl = r[5] || ''; p.link = r[6] || ''; p.description = r[7] || '';
-        p.salePrice = parseFloat(r[8]) || 0; p.marketPrice = parseFloat(r[9]) || 0;
+        p.title = col(r, 'title'); p.price = parseFloat(col(r, 'price')) || 0; p.brand = col(r, 'brand'); p.gtin = col(r, 'gtin'); p.category = col(r, 'category');
+        p.imageUrl = col(r, 'imageurl'); p.link = col(r, 'link'); p.description = col(r, 'description');
+        p.salePrice = parseFloat(col(r, 'saleprice')) || 0; p.marketPrice = parseFloat(col(r, 'marketprice')) || 0;
+        var av = col(r, 'availability').toLowerCase().replace(/[\s-]+/g, '_');
+        if (['in_stock', 'out_of_stock', 'preorder'].indexOf(av) >= 0) p.availability = av;
         S.products.push(p); n++;
       });
       UI.csv = '';
@@ -2008,6 +2065,8 @@
     addNegative: function (el, args) {
       var c = campById(args[0]);
       if (!c) { toast('That campaign no longer exists.'); return; }
+      if (args[2] > 0 && !armed(el, 'It converted ' + args[2] + '×. Block anyway?')) return;
+      if (!args[2] && args[3] && !armed(el, 'This is your keyword. Block it?')) return;
       c.negativesText = (c.negativesText ? c.negativesText.replace(/\s+$/, '') + '\n' : '') + '[' + args[1] + ']';
       save(); render(true); toast('Added [' + args[1] + '] as an exact-match negative to "' + c.name + '". Takes effect next round.');
     },

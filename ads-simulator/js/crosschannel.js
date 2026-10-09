@@ -29,7 +29,7 @@
       shopping: { ctr: ind.shopping.ctr, cpc: ind.shopping.cpc, cpa: ind.shopping.cpc / ind.shopping.cvr },
       chatgpt: { ctr: cb.ctr, cpc: cb.cpc, cpa: cb.cpc / cb.cvr, cpm: cb.cpm },
       // upper-funnel cost per conversion is typically several times Search
-      display: { ctr: ind.display.ctr, cpc: ind.display.cpc, cpa: Math.max(ind.display.cpc / ind.display.cvr, 3 * sCpa) },
+      display: (function () { var d = E.displayBench(ind); return { ctr: d.ctr, cpc: d.cpc, cpa: d.cpc / d.cvr }; })(),
       video: { ctr: 0.005, cpc: null, cpa: 3 * sCpa, viewRate: ind.video.viewRate, cpv: ind.video.cpv }
     };
   }
@@ -42,6 +42,11 @@
       if (c.lostIsBudget != null) { m.lostIsBudgetW += c.lostIsBudget * c.cost; m.lostIsRankW += (c.lostIsRank || 0) * c.cost; m.isW += c.cost; }
     });
     m.ctr = U.safeDiv(m.clicks, m.impressions);
+    // Search Network CTR without Display expansion impressions (those are not searches)
+    var dxI = U.sum(rows, function (c) { return c.displayExpansion ? c.displayExpansion.impressions : 0; });
+    var dxC = U.sum(rows, function (c) { return c.displayExpansion ? c.displayExpansion.clicks : 0; });
+    m.benchCtr = dxI ? U.safeDiv(m.clicks - dxC, m.impressions - dxI) : m.ctr;
+    m.expansionImpr = dxI;
     m.cpc = U.safeDiv(m.cost, m.clicks);
     m.cpm = U.safeDiv(m.cost, m.impressions) * 1000;
     m.cvr = U.safeDiv(m.conversions, m.clicks);
@@ -54,6 +59,8 @@
   }
 
   function money(n) { n = Number(n) || 0; return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: n !== 0 && Math.abs(n) < 100 ? 2 : 0, minimumFractionDigits: n !== 0 && Math.abs(n) < 100 ? 2 : 0 }); }
+  function money0(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('en-US'); }
+  function round5(n) { return Math.max(5, Math.round(n / 5) * 5); }
   function pct(n, d) { return ((Number(n) || 0) * 100).toFixed(d == null ? 1 : d) + '%'; }
 
   // Verdict for one channel or campaign
@@ -78,7 +85,7 @@
       if (idx >= 0.95) return { key: 'ok', label: 'Break-even', why: 'ROAS ' + m.roas.toFixed(2) + '× is close to break-even (' + ctx.be.toFixed(2) + '×): it pays for itself but earns little.' };
       return { key: 'bad', label: 'Losing money', why: 'ROAS ' + m.roas.toFixed(2) + '× is below break-even (' + ctx.be.toFixed(2) + '×): every $1 spent returns ' + money(m.roas * ctx.margin) + ' of profit.' };
     }
-    if (idx >= 1) return { key: 'good', label: 'Profitable', why: 'Unusual for an upper-funnel channel: it pays back directly (ROAS ' + m.roas.toFixed(2) + '×).' };
+    if (idx >= 1) return { key: 'good', label: 'Profitable', why: 'Pays back directly (ROAS ' + m.roas.toFixed(2) + '×, break-even ' + ctx.be.toFixed(2) + '×). Part of this comes from ' + (type === 'video' ? 'engaged-view' : 'view-through') + ' conversions: people who saw the ad and bought later.' };
     if (idx >= 0.45) return { key: 'ok', label: 'Supporting', why: 'Does not pay back directly (ROAS ' + m.roas.toFixed(2) + '×), which is normal for awareness. It also lifts brand searches in the next round.' };
     return { key: 'bad', label: 'Not paying back', why: 'ROAS ' + m.roas.toFixed(2) + '× is too low even for an awareness channel.' };
   }
@@ -91,7 +98,7 @@
     var mine = function (x) { return ids.indexOf(x.campaignId) >= 0; };
     if (!m.cost) { next.push('Fix the setup so the campaign can deliver (see Score & feedback).'); return { good: good, bad: bad, next: next }; }
 
-    var ctrIdx = U.safeDiv(m.ctr, b.ctr);
+    var ctrIdx = U.safeDiv(m.benchCtr, b.ctr);
     var ctrFix = {
       search: 'Put the keyword in headlines, split loose ad groups, and add sitelinks and callouts.',
       shopping: 'Improve product titles and images, and check that prices are competitive.',
@@ -99,8 +106,10 @@
       display: 'Narrow audiences to in-market or remarketing segments and refresh images.',
       video: 'Hook viewers in the first 5 seconds and show the brand early (ABCD).'
     };
-    if (ctrIdx >= 1.15) good.push('CTR ' + pct(m.ctr, 2) + ' beats the ' + pct(b.ctr, 2) + ' benchmark: ads are relevant to the people who see them.');
-    else if (ctrIdx < 0.8) { bad.push('CTR ' + pct(m.ctr, 2) + ' is below the ' + pct(b.ctr, 2) + ' benchmark.'); next.push(ctrFix[type]); }
+    var ctrLabel = 'CTR ' + pct(m.benchCtr, 2) + (m.expansionImpr ? ' on searches' : '');
+    if (ctrIdx >= 1.15) good.push(ctrLabel + ' beats the ' + pct(b.ctr, 2) + ' benchmark: ads are relevant to the people who see them.');
+    else if (ctrIdx < (type === 'chatgpt' ? 0.75 : 0.7)) { bad.push(ctrLabel + ' is below the ' + pct(b.ctr, 2) + ' benchmark.'); next.push(ctrFix[type]); }
+    if (m.expansionImpr) { bad.push('Display expansion added ' + Math.round(m.expansionImpr).toLocaleString('en-US') + ' low-intent image impressions, pulling the overall CTR down to ' + pct(m.ctr, 2) + '.'); next.push('Turn off Display Network expansion in the Search campaign settings; run Display as its own campaign.'); }
 
     if (b.cpc && m.clicks) {
       var cpcIdx = m.cpc / b.cpc;
@@ -129,14 +138,19 @@
       if (ctx.tracked && m.roas >= ctx.be) { bad.push('Misses ' + pct(m.lostIsBudget, 0) + ' of eligible impressions because the budget runs out.'); next.push('Scale: raise the daily budget. This channel is profitable and limited by budget.'); }
       else good.push('The budget caps spend (' + pct(m.lostIsBudget, 0) + ' impressions lost), which limits losses while you fix efficiency.');
     }
-    if (m.lostIsRank != null && m.lostIsRank > 0.4) { bad.push('Loses ' + pct(m.lostIsRank, 0) + ' of impressions on Ad Rank (bid × quality).'); next.push('Improve Quality Score before raising bids.'); }
+    if (m.lostIsRank != null && m.lostIsRank > 0.4) {
+      bad.push('Loses ' + pct(m.lostIsRank, 0) + ' of impressions on ' + (type === 'shopping' ? 'rank (bid × product data quality).' : 'Ad Rank (bid × quality).'));
+      next.push(type === 'shopping' ? 'Improve feed quality (titles, images, GTINs), then raise product group bids on your profitable products.' : 'Improve Quality Score (ad relevance, landing page) before raising bids.');
+    }
 
     if (type === 'search') {
       var terms = (r.searchTerms || []).filter(mine);
       var cost = U.sum(terms, function (t) { return t.cost; });
       var waste = U.sum(terms.filter(function (t) { return !t.excluded && t.conversions === 0 && (t.intent === 'low' || t.relevance < 0.35); }), function (t) { return t.cost; });
-      if (cost && waste / cost > 0.12) { bad.push(pct(waste / cost, 0) + ' of Search spend (' + money(waste) + ') went to irrelevant search terms.'); next.push('Add the irrelevant search terms as negatives (Reports → Search terms).'); }
-      else if (cost) good.push('Little wasted spend on irrelevant search terms.');
+      // same rule as Score & feedback: terms with no conversions and low intent or low relevance
+      if (cost && waste / cost > 0.1) { bad.push(pct(waste / cost, 0) + ' of Search spend (' + money(waste) + ') went to irrelevant search terms.'); next.push('Add the irrelevant search terms as negatives (Reports → Search terms, "Wasted spend" view).'); }
+      else if (cost && waste > 0) { good.push('Wasted spend is low: ' + money(waste) + ' (' + pct(waste / cost, 0) + ' of Search spend) on irrelevant search terms.'); next.push('Still add the ' + money(waste) + ' of irrelevant search terms as negatives: it is easy savings.'); }
+      else if (cost) good.push('No spend on irrelevant search terms.');
     }
     if (type === 'display') {
       var pl = (r.placements || []).filter(mine);
@@ -155,8 +169,8 @@
       var tp = (r.chatTopics || []).filter(mine);
       var tc = U.sum(tp, function (t) { return t.cost; });
       var off = U.sum(tp.filter(function (t) { return t.status === 'Off-target'; }), function (t) { return t.cost; });
-      if (tc && off / tc > 0.12) { bad.push(pct(off / tc, 0) + ' of spend matched loosely related conversations.'); next.push('Replace one-word hints with specific needs ("choosing a beginner espresso machine").'); }
-      else if (tc) good.push('Context hints matched relevant conversations.');
+      if (tc && off / tc > 0.08) { bad.push(money(off) + ' (' + pct(off / tc, 0) + ' of spend) matched loosely related conversations.'); next.push('Rewrite broad or unrelated hints as specific needs that name what you sell.'); }
+      else if (tc) good.push(off ? 'Most spend (' + pct(1 - off / tc, 0) + ') matched relevant conversations.' : 'Context hints matched relevant conversations.');
       var actual = U.sum(camps, function (c) { return c.conversions; }), reported = U.sum(camps, function (c) { return c.reportedConversions || 0; });
       if (ctx.tracked && actual > 3 && reported < actual * 0.85) { bad.push('Ads Manager reports only ' + Math.round(reported) + ' of about ' + Math.round(actual) + ' conversions.'); next.push('Connect the Conversions API and pass {oppref} so conversions are matched.'); }
     }
@@ -164,6 +178,12 @@
 
     if (!next.length) next.push(m.roas >= ctx.be || ctx.goal === 'awareness' ? 'Keep it running and test one new idea (a new ad angle or audience).' : 'Fix efficiency before adding budget.');
     return { good: good, bad: bad, next: U.uniq(next) };
+  }
+
+  // Few conversions make ROAS swing from round to round; say so instead of over-reading the number
+  function sampleNote(v, m, ctx) {
+    if (ctx.tracked && m.cost > 0 && m.conversions > 0 && m.conversions < 15 && v.key !== 'off') v.why += ' Based on only ' + Math.round(m.conversions) + ' conversion' + (Math.round(m.conversions) === 1 ? '' : 's') + ', so expect this to swing between rounds.';
+    return v;
   }
 
   function analyze(state, r, prev) {
@@ -189,7 +209,7 @@
       m.shareValue = U.safeDiv(m.value, T.value);
       m.shareClicks = U.safeDiv(m.clicks, T.clicks);
       var running = camps.filter(function (c) { return !c.errors.length; });
-      m.verdict = verdict(running.length ? m : { errors: camps[0].errors }, type, ctx);
+      m.verdict = sampleNote(verdict(running.length ? m : { errors: camps[0].errors }, type, ctx), m, ctx);
       m.diagnosis = diagnose(type, m, camps, r, ctx);
       if (prev) {
         var pm = rollup(prev.campaigns.filter(function (c) { return c.type === type; }));
@@ -199,7 +219,7 @@
     });
 
     var campaigns = r.campaigns.map(function (c) {
-      var v = verdict(c, c.type, ctx);
+      var v = sampleNote(verdict(c, c.type, ctx), c, ctx);
       return { id: c.id, name: c.name, type: c.type, cost: c.cost, clicks: c.clicks, impressions: c.impressions, ctr: c.ctr, cpc: c.cpc, conversions: c.conversions, cpa: c.cpa, value: c.value, roas: c.roas, profit: c.value * margin - c.cost, verdict: v };
     });
 
@@ -209,16 +229,25 @@
       var live = channels.filter(function (c) { return c.cost > 0; });
       var winners = live.filter(function (c) { return c.roas >= ctx.be * 1.1; }).sort(function (a, b) { return b.roas - a.roas; });
       var losers = live.filter(function (c) { return c.verdict.key === 'bad'; }).sort(function (a, b) { return a.roas - b.roas; });
+      var floor = function (c) { return c.type === 'chatgpt' ? D.CHATGPT.minDaily * c.campaignCount : 0; };
       losers.forEach(function (l) {
-        var move = Math.max(5, Math.round(l.dailyBudget * (l.role.judge === 'assist' ? 0.3 : 0.4)));
+        var move = round5(Math.max(5, l.dailyBudget * (l.role.judge === 'assist' ? 0.3 : 0.4)));
+        var room = l.dailyBudget - floor(l);
         var to = winners.find(function (w) { return w.lostIsBudget != null && w.lostIsBudget > 0.1; }) || winners[0];
+        if (floor(l) && room < 5) {
+          plan.push({ from: l.type, to: null, amount: 0, text: l.name + ' is at the $' + D.CHATGPT.minDaily + '/day minimum, so it cannot be cut further. Fix it first (more specific hints, clearer titles, Conversions API), or pause it and move its whole budget' + (to ? ' to ' + to.name : '') + '.' });
+          return;
+        }
+        if (floor(l)) move = Math.min(move, Math.floor(room / 5) * 5);
         plan.push({ from: l.type, to: to ? to.type : null, amount: move,
-          text: to ? 'Move about ' + money(move) + '/day from ' + l.name + ' (ROAS ' + l.roas.toFixed(2) + '×) to ' + to.name + ' (ROAS ' + to.roas.toFixed(2) + '×' + (to.lostIsBudget > 0.1 ? ', budget-limited' : '') + '), then fix ' + l.name + ' before adding money back.'
-            : 'Cut ' + l.name + ' by about ' + money(move) + '/day until it reaches break-even; no channel is clearly profitable yet, so fix efficiency first.' });
+          text: (to ? 'Move about ' + money0(move) + '/day from ' + l.name + ' (ROAS ' + l.roas.toFixed(2) + '×) to ' + to.name + ' (ROAS ' + to.roas.toFixed(2) + '×' + (to.lostIsBudget > 0.1 ? ', budget-limited' : '') + '), then fix ' + l.name + ' before adding money back.'
+            : 'Cut ' + l.name + ' by about ' + money0(move) + '/day until it reaches break-even; no channel is clearly profitable yet, so fix efficiency first.') + (floor(l) ? ' (ChatGPT ads need at least $' + D.CHATGPT.minDaily + '/day.)' : '') });
       });
       winners.forEach(function (w) {
         if (w.lostIsBudget != null && w.lostIsBudget > 0.2 && !plan.some(function (p) { return p.to === w.type; })) {
-          plan.push({ from: null, to: w.type, amount: Math.round(w.dailyBudget * 0.3), text: 'Scale ' + w.name + ': it is profitable (ROAS ' + w.roas.toFixed(2) + '×) and misses ' + pct(w.lostIsBudget, 0) + ' of impressions because of budget. Try about +' + money(Math.round(w.dailyBudget * 0.3)) + '/day.' });
+          // enough to capture a good part of the impressions lost to budget
+          var add = round5(Math.max(5, w.dailyBudget * Math.min(1, w.lostIsBudget / (1 - w.lostIsBudget)) * 0.6));
+          plan.push({ from: null, to: w.type, amount: add, text: 'Scale ' + w.name + ': it is profitable (ROAS ' + w.roas.toFixed(2) + '×) and misses ' + pct(w.lostIsBudget, 0) + ' of impressions because of budget. Try about +' + money0(add) + '/day (from ' + money0(w.dailyBudget) + ' to ' + money0(w.dailyBudget + add) + '), and watch that ROAS stays above break-even.' });
         }
       });
       var assists = live.filter(function (c) { return c.role.judge === 'assist' && c.verdict.key === 'ok'; });

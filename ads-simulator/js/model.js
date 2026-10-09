@@ -20,7 +20,7 @@
       seed: Math.floor(Math.random() * 1e9),
       account: {
         businessName: '', website: '', industry: 'retail', serviceArea: 'national', goal: 'sales',
-        value: 75, margin: 0.4, brandColor: '#1a73e8', description: '', conversionTracking: false, logoUrl: ''
+        value: D.INDUSTRIES.retail.value, margin: D.INDUSTRIES.retail.margin, brandColor: '#1a73e8', description: '', conversionTracking: false, logoUrl: ''
       },
       scan: null,
       products: [],
@@ -201,6 +201,19 @@
     return U.clamp(s / toks.length, 0, 1);
   }
 
+  // How well an audience or topic fits this business: its keywords against the business's own words first,
+  // then the industry. Returns { key: 'strong' | 'industry' | 'weak' | 'own', rel }.
+  function segmentFit(seg, state, vocab) {
+    if (!seg) return { key: 'weak', rel: 0.35 };
+    if (seg.inds === 'all') return { key: 'own', rel: 1 };
+    var isTopic = !seg.type;
+    vocab = vocab || businessVocab(state);
+    var hits = U.contentTokens(seg.kw || '').filter(function (t) { return (vocab.get(t) || 0) >= 0.8; });
+    if (hits.length) return { key: 'strong', rel: isTopic ? 0.85 : 1, hits: hits };
+    if ((seg.inds || []).indexOf(state.account.industry) >= 0) return { key: 'industry', rel: isTopic ? 0.6 : 0.7 };
+    return { key: 'weak', rel: isTopic ? 0.25 : 0.35 };
+  }
+
   function brandTokens(state) {
     return U.contentTokens(state.account.businessName);
   }
@@ -224,13 +237,25 @@
 
   var PHONE_RE = /(\+?\d[\d\-\s().]{7,}\d)/;
 
+  // Capitals are allowed for trademarks and acronyms (YETI, IKEA, HVAC) but not for emphasis ("FREE", "BUY NOW").
+  var EMPHASIS = ['FREE', 'SALE', 'BEST', 'SHOP', 'DEAL', 'DEALS', 'SAVE', 'HURRY', 'TODAY', 'LIMITED', 'OFFER', 'CHEAP', 'CLICK', 'CALL', 'ORDER', 'GUARANTEED', 'AMAZING', 'HUGE', 'BONUS', 'EXCLUSIVE', 'NOW', 'NEW', 'BUY', 'OFF', 'WIN'];
+  var brandCaps = [];
+  function setBrand(name) { brandCaps = (String(name || '').match(/[A-Za-z0-9]+/g) || []).map(function (w) { return w.toUpperCase(); }); }
+  function excessiveCaps(text) {
+    var words = (String(text || '').match(/\b[A-Z]{3,}\b/g) || []).filter(function (w) { return brandCaps.indexOf(w) < 0; });
+    var loud = words.filter(function (w) { return EMPHASIS.indexOf(w) >= 0; });
+    if (loud.length) return loud[0];
+    var long = words.filter(function (w) { return w.length >= 4; });
+    return long.length >= 2 ? long[0] + ' ' + long[1] : '';
+  }
+
   function policyIssues(text, kind) {
     var issues = [];
     if (!text) return issues;
     if (kind === 'headline' && text.indexOf('!') >= 0) issues.push('Exclamation marks are not allowed in headlines');
     if (/([!?.])\1/.test(text)) issues.push('Repeated punctuation (e.g., "!!") is not allowed');
-    var caps = (text.match(/\b[A-Z]{4,}\b/g) || []).filter(function (w) { return ['HVAC', 'SAAS', 'USDA', 'HIIT'].indexOf(w) < 0; });
-    if (caps.length) issues.push('Excessive capitalization ("' + caps[0] + '")');
+    var caps = excessiveCaps(text);
+    if (caps) issues.push('Excessive capitalization ("' + caps + '"): capitals are fine for brand names and acronyms, not for emphasis');
     if (PHONE_RE.test(text)) issues.push('Phone numbers are not allowed in ad text — use a call asset');
     return issues;
   }
@@ -469,7 +494,7 @@
 
   // Product/service phrases from the business description as starter keyword ideas:
   // "Florist offering same-day flower delivery and wedding bouquets" -> same-day flower delivery, wedding bouquets.
-  var FILLER = new Set(('offering offer offers provide provides providing including include includes specializing specialize ' +
+  var FILLER = new Set(('made make makes brand brands company companies business businesses items item things stuff collection offering offer offers provide provides providing including include includes specializing specialize ' +
     'based located serving serve serves selling sell sells handling family owned since all every plus also like such etc ' +
     'into over than more most very just only you we our us their its your fast easy great fresh').split(' '));
 
@@ -478,8 +503,11 @@
     String(text || '').toLowerCase().split(/[.,;:!?()\n]+/).forEach(function (chunk) {
       var seg = [];
       function flush() {
-        if (seg.length >= 2) {
-          var p = seg.slice(-3).join(' ');
+        // drop repeated words ("boy brow brow gel"); long runs keep their last two words, the head noun phrase
+        var dedup = seg.filter(function (w, i) { return seg.lastIndexOf(w) === i; });
+        var cut = dedup.length < seg.length || dedup.length >= 4 ? dedup.slice(-2) : dedup;
+        if (cut.length >= 2) {
+          var p = cut.join(' ');
           if (out.indexOf(p) < 0) out.push(p);
         }
         seg = [];
@@ -605,7 +633,10 @@
   function hintQuality(hint, vocab) {
     var n = U.words(hint).length;
     var spec = n <= 1 ? 0.3 : n <= 3 ? 0.65 : n <= 14 ? 1 : 0.8;
-    var rel = relevance(hint, vocab);
+    // a hint is natural language: one strong match ("makeup" in "natural everyday makeup routine") makes it relevant
+    var toks = U.contentTokens(hint);
+    var best = toks.reduce(function (m, t) { return Math.max(m, vocab.get(t) || 0); }, 0);
+    var rel = toks.length ? U.clamp(0.6 * best + 0.4 * relevance(hint, vocab), 0, 1) : 0.35;
     return { hint: hint, words: n, specificity: spec, relevance: rel, score: spec * (0.25 + 0.75 * rel), label: n <= 1 ? 'Too vague' : rel < 0.4 ? 'Off-topic' : n <= 3 ? 'Broad' : 'Specific' };
   }
 
@@ -620,8 +651,9 @@
     if (!(ad.url || (g && g.defaultUrl) || state.account.website)) reasons.push('Add a destination URL');
     var text = title + ' ' + body;
     C.prohibited.forEach(function (r) { if (r[0].test(text) && reasons.indexOf(r[1]) < 0) reasons.push(r[1]); });
-    var caps = (text.match(/\b[A-Z]{4,}\b/g) || []).filter(function (w) { return ['HIIT', 'HVAC', 'SAAS'].indexOf(w) < 0; });
-    if (caps.length) reasons.push('Excessive capitalization ("' + caps[0] + '")');
+    setBrand(state.account.businessName);
+    var caps = excessiveCaps(text);
+    if (caps) reasons.push('Excessive capitalization ("' + caps + '"): capitals are fine for brand names and acronyms, not for emphasis');
     var restricted = C.restricted[state.account.industry];
     var status = reasons.length ? 'Rejected' : restricted ? 'Approved (restricted)' : 'Approved';
     var tips = [];
@@ -632,7 +664,7 @@
   }
 
   AdSim.model = {
-    newChatAd: newChatAd, chatHints: chatHints, hintQuality: hintQuality, chatAdReview: chatAdReview,
+    newChatAd: newChatAd, setBrand: setBrand, segmentFit: segmentFit, excessiveCaps: excessiveCaps, chatHints: chatHints, hintQuality: hintQuality, chatAdReview: chatAdReview,
     newState: newState, newCampaign: newCampaign, newAdGroup: newAdGroup, newRSA: newRSA, newRDA: newRDA,
     newVideoAd: newVideoAd, newProduct: newProduct, newTargeting: newTargeting, businessVocab: businessVocab,
     relevance: relevance, intentOf: intentOf, policyIssues: policyIssues, rsaStrength: rsaStrength,

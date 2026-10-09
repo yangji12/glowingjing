@@ -713,3 +713,13 @@ tr.hl td { background: var(--accent-soft); }
   .xc-pair, .xc-roas .xc-pair { grid-template-columns: 90px 1fr; }
   .xc-be { display: none; }
 }
+
+/* Folded feedback groups */
+.fb-fold { margin: 12px 0 0; }
+.fb-fold > summary { cursor: pointer; font-weight: 700; padding: 8px 0; color: var(--accent); }
+details.card.fb-fold > summary { color: var(--text); }
+.fb-fold[open] > summary { margin-bottom: 6px; }
+td.wrap { white-space: normal; }
+.warn-card { border-left: 4px solid var(--warning); background: var(--chip-warning); }
+.warn-card p { margin: 0 0 8px; }
+.inline-warn { margin: 8px 0; padding: 10px 12px; border-radius: 8px; }
