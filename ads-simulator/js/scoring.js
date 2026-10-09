@@ -35,7 +35,7 @@
     check(list, {
       id: 'acc-tracking', cat: 'Measurement', guide: 'ACC-1', weight: 8,
       status: acc.conversionTracking ? 'pass' : 'fail',
-      title: 'Conversion tracking (Google tag) installed',
+      title: 'Conversion tracking installed',
       detail: acc.conversionTracking ? 'Conversions are measured and available to Smart Bidding and remarketing.' : 'Conversions are not measured. You cannot see which keywords make money, Smart Bidding cannot optimize, and remarketing lists stay empty.',
       fix: 'Turn on "Conversion tracking installed" in Business & website.'
     });
@@ -104,7 +104,8 @@
 
       // --- bidding ---
       var bs = D.BID_STRATEGIES[c.bidStrategy] || {};
-      var prevCamp = prev && (prev.campaigns || []).find(function (x) { return x.id === c.id; });
+      var prevCamp = null;
+      for (var ri = state.rounds.length - 1; ri >= 0 && !prevCamp; ri--) prevCamp = (state.rounds[ri].campaigns || []).find(function (x) { return x.id === c.id; }) || null;
       var prevConv = prevCamp ? prevCamp.conversions : 0;
       var bidStatus = 'pass', bidDetail = bs.name + ' — ' + (bs.desc || '');
       if (bs.needsConv && !acc.conversionTracking) { bidStatus = 'fail'; bidDetail = bs.name + ' optimizes toward conversions, but conversion tracking is off.'; }
@@ -689,10 +690,22 @@
     return fb;
   }
 
+  // A round that ran one platform is scored on that platform's campaigns, and compared with the
+  // previous round of the same scope.
+  function scopedState(state, scope) {
+    if (!scope || scope === 'all') return state;
+    return Object.assign({}, state, { campaigns: state.campaigns.filter(function (c) { return c.type === scope; }) });
+  }
+  function prevSameScope(state, scope) {
+    for (var i = state.rounds.length - 1; i >= 0; i--) if ((state.rounds[i].scope || 'all') === (scope || 'all')) return state.rounds[i];
+    return null;
+  }
+
   function scoreRound(state, result) {
+    state = scopedState(state, result.scope);
     var setup = evaluateSetup(state);
     var perf = performanceScore(state, result);
-    var prev = state.rounds[state.rounds.length - 1];
+    var prev = prevSameScope(state, result.scope);
     var overall = Math.round(0.45 * setup.score + 0.55 * perf.score);
     var acc = state.account;
     result.score = {
@@ -706,5 +719,5 @@
     return result;
   }
 
-  AdSim.scoring = { evaluateSetup: evaluateSetup, performanceScore: performanceScore, scoreRound: scoreRound, grade: grade, CATS: CATS };
+  AdSim.scoring = { scopedState: scopedState, prevSameScope: prevSameScope, evaluateSetup: evaluateSetup, performanceScore: performanceScore, scoreRound: scoreRound, grade: grade, CATS: CATS };
 })(typeof window !== 'undefined' ? window : globalThis);

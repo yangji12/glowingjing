@@ -69,15 +69,16 @@
     if (!(m.cost > 0.5) || !m.impressions) return { key: 'off', label: 'No delivery', why: 'It spent almost nothing, so there is nothing to judge yet.' };
     var role = ROLES[type];
     var b = ctx.bench[type];
+    var ctr = m.benchCtr != null ? m.benchCtr : m.searchCtr != null ? m.searchCtr : m.ctr;
     if (ctx.awareness) {
       var cpmIdx = U.safeDiv(m.cpm, b.cpm || (b.cpc * b.ctr * 1000) || m.cpm);
-      if (cpmIdx <= 1.1 && m.ctr >= b.ctr * 0.8) return { key: 'good', label: 'Working', why: 'Efficient reach for an awareness goal: CPM ' + money(m.cpm) + ' with healthy engagement.' };
+      if (cpmIdx <= 1.1 && ctr >= b.ctr * 0.8) return { key: 'good', label: 'Working', why: 'Efficient reach for an awareness goal: CPM ' + money(m.cpm) + ' with healthy engagement.' };
       return cpmIdx <= 1.6 ? { key: 'ok', label: 'Acceptable', why: 'Reach costs a bit more than typical (CPM ' + money(m.cpm) + ').' } : { key: 'bad', label: 'Expensive reach', why: 'CPM ' + money(m.cpm) + ' is well above typical for this channel.' };
     }
     if (!ctx.tracked) {
-      var ci = U.safeDiv(m.ctr, b.ctr);
-      return ci >= 0.9 ? { key: 'ok', label: 'Unmeasured', why: 'Traffic looks healthy (CTR ' + pct(m.ctr, 2) + '), but without conversion tracking you cannot see if it pays.' } :
-        { key: 'bad', label: 'Unmeasured · weak', why: 'Low engagement (CTR ' + pct(m.ctr, 2) + ' vs. ' + pct(b.ctr, 2) + ' typical) and no conversion tracking.' };
+      var ci = U.safeDiv(ctr, b.ctr);
+      return ci >= 0.9 ? { key: 'ok', label: 'Unmeasured', why: 'Traffic looks healthy (CTR ' + pct(ctr, 2) + '), but without conversion tracking you cannot see if it pays.' } :
+        { key: 'bad', label: 'Unmeasured · weak', why: 'Low engagement (CTR ' + pct(ctr, 2) + ' vs. ' + pct(b.ctr, 2) + ' typical) and no conversion tracking.' };
     }
     var idx = U.safeDiv(m.roas, ctx.be);
     if (role.judge === 'intent') {

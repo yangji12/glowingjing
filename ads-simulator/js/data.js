@@ -123,12 +123,14 @@
     { id: 't_games', name: 'Games', size: 200e6, inds: [], kw: '' }
   ];
 
+  // Platforms in the order students see them; each campaign type is one platform
+  var PLATFORMS = ['search', 'display', 'video', 'chatgpt', 'shopping'];
   var CAMPAIGN_TYPES = {
-    search:   { name: 'Search', icon: '🔍', desc: 'Text ads on search results when people search for your keywords. Best for capturing existing demand (sales, leads).' },
-    display:  { name: 'Display', icon: '🖼️', desc: 'Responsive image ads across websites and apps. Best for awareness, consideration, and remarketing.' },
-    video:    { name: 'Video (YouTube)', icon: '▶️', desc: 'Video ads on YouTube. Best for awareness and consideration; drives reach and brand lift.' },
-    chatgpt:  { name: 'ChatGPT ads', icon: '💬', desc: 'Sponsored cards shown below ChatGPT answers when the conversation is relevant. Matched by context hints, landing page and ad copy. Best for consideration and traffic.' },
-    shopping: { name: 'Shopping', icon: '🛒', desc: 'Product listings with image, price, and store name built from your product feed. Best for online retail sales.' }
+    search:   { platform: 'Google Search', report: 'terms', name: 'Search', icon: '🔍', desc: 'Text ads on search results when people search for your keywords. Best for capturing existing demand (sales, leads).' },
+    display:  { platform: 'Google Display', report: 'audiences', name: 'Display', icon: '🖼️', desc: 'Responsive image ads across websites and apps. Best for awareness, consideration, and remarketing.' },
+    video:    { platform: 'YouTube', report: 'youtube', name: 'Video (YouTube)', icon: '▶️', desc: 'Video ads on YouTube. Best for awareness and consideration; drives reach and brand lift.' },
+    chatgpt:  { platform: 'ChatGPT ads', report: 'chatgpt', name: 'ChatGPT ads', icon: '💬', desc: 'Sponsored cards shown below ChatGPT answers when the conversation is relevant. Matched by context hints, landing page and ad copy. Best for consideration and traffic.' },
+    shopping: { platform: 'Google Shopping', report: 'products', name: 'Shopping', icon: '🛒', desc: 'Product listings with image, price, and store name built from your product feed. Best for online retail sales.' }
   };
 
   var GOALS = {
@@ -422,7 +424,7 @@
     INDUSTRIES: INDUSTRIES, AGE_BANDS: AGE_BANDS, AGE_SHARE: AGE_SHARE, GENDERS: GENDERS,
     LOCATIONS: LOCATIONS, AUDIENCES: AUDIENCES, AUDIENCE_TYPES: AUDIENCE_TYPES, TOPICS: TOPICS,
     CAMPAIGN_TYPES: CAMPAIGN_TYPES, GOALS: GOALS, BID_STRATEGIES: BID_STRATEGIES,
-    VIDEO_FORMATS: VIDEO_FORMATS, VIDEO_SUBTYPES: VIDEO_SUBTYPES, CHATGPT: CHATGPT, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, PRODUCT_INDUSTRIES: PRODUCT_INDUSTRIES, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
+    VIDEO_FORMATS: VIDEO_FORMATS, VIDEO_SUBTYPES: VIDEO_SUBTYPES, CHATGPT: CHATGPT, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, PLATFORMS: PLATFORMS, PRODUCT_INDUSTRIES: PRODUCT_INDUSTRIES, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
     LOW_INTENT_WORDS: LOW_INTENT_WORDS, CTA_WORDS: CTA_WORDS, GUIDELINES: GUIDELINES,
     GUIDE_INDEX: GUIDE_INDEX, TEMPLATES: TEMPLATES
   };

@@ -126,8 +126,13 @@
     var smart = SMART.indexOf(c.bidStrategy) >= 0;
     if (!smart) return { factor: 1, status: null };
     if (!ctx.acc.conversionTracking) return { factor: 0.6, status: 'no-tracking' };
-    var prevCfg = ctx.prev && (ctx.prev.config || []).find(function (x) { return x.id === c.id; });
-    var prevRes = ctx.prev && (ctx.prev.campaigns || []).find(function (x) { return x.id === c.id; });
+    // the last round this campaign actually ran in (rounds can run one platform at a time)
+    var prevCfg = null, prevRes = null;
+    for (var i = ctx.state.rounds.length - 1; i >= 0 && !prevRes; i--) {
+      var rd = ctx.state.rounds[i];
+      prevRes = (rd.campaigns || []).find(function (x) { return x.id === c.id; }) || null;
+      if (prevRes) prevCfg = (rd.config || []).find(function (x) { return x.id === c.id; }) || null;
+    }
     if (!prevCfg || prevCfg.bidStrategy !== c.bidStrategy) return { factor: 0.88, status: 'learning' };
     if (prevRes && prevRes.conversions >= 30) return { factor: 1.1, status: 'optimized' };
     if (prevRes && prevRes.conversions >= 15) return { factor: 1.04, status: 'ok' };
@@ -1576,12 +1581,15 @@
     };
   }
 
-  function simulateRound(state) {
+  // opts.scope: 'all' (default) or one campaign type, to simulate a single platform
+  function simulateRound(state, opts) {
     M.setBrand(state.account.businessName);
+    var scope = (opts && opts.scope) || 'all';
     var ctx = makeContext(state);
     var campaigns = [];
     state.campaigns.forEach(function (c) {
       if (c.status !== 'enabled') return;
+      if (scope !== 'all' && c.type !== scope) return;
       var r;
       if (c.type === 'search') r = simSearch(c, ctx);
       else if (c.type === 'display') r = simDisplay(c, ctx);
@@ -1637,6 +1645,7 @@
 
     return {
       round: ctx.roundNo,
+      scope: scope,
       createdAt: new Date().toISOString(),
       market: ctx.market,
       events: events,

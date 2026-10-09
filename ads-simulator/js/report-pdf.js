@@ -81,7 +81,7 @@
     doc.setFont('helvetica', 'bold'); doc.setFontSize(21);
     text('Campaign Results Overview', M, 58);
     doc.setFontSize(12);
-    text('Round ' + r.round + ' (30 days)', W - M, 58, { align: 'right' });
+    text('Round ' + r.round + ' (30 days) - ' + (!r.scope || r.scope === 'all' ? 'all platforms' : (D.CAMPAIGN_TYPES[r.scope] || {}).platform + ' only'), W - M, 58, { align: 'right' });
 
     // ----- Who / what -----
     y = 112;
@@ -259,7 +259,7 @@
     }
 
     // ----- Cross-channel results -----
-    if (AdSim.channels) {
+    if (AdSim.channels && (!r.scope || r.scope === 'all')) {
       var X = AdSim.channels.analyze(state, r, prev);
       if (X.channels.length) {
         doc.addPage(); y = M;

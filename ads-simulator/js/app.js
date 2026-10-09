@@ -317,7 +317,11 @@
     var n = UI.round || S.rounds.length;
     return S.rounds[U.clamp(n, 1, S.rounds.length) - 1];
   }
-  function prevRoundOf(r) { return r && r.round > 1 ? S.rounds[r.round - 2] : null; }
+  function prevRoundOf(r) {
+    if (!r) return null;
+    for (var i = r.round - 2; i >= 0; i--) if ((S.rounds[i].scope || 'all') === (r.scope || 'all')) return S.rounds[i];
+    return null;
+  }
   function industry() { return D.INDUSTRIES[S.account.industry] || D.INDUSTRIES.retail; }
   function convCell(r, v, f) { return r && !r.tracked ? '<span class="muted" title="Conversion tracking was off">—</span>' : (f || fNum)(v, 0); }
 
@@ -325,7 +329,7 @@
     if (!S.rounds.length) return '';
     var cur = currentRound();
     return '<label class="round-select">Round <select data-action-change="selectRound" aria-label="Select round">' + S.rounds.map(function (r) {
-      return '<option value="' + r.round + '"' + (r === cur ? ' selected' : '') + '>Round ' + r.round + ' — score ' + r.score.overall + ' (' + r.score.grade + ')</option>';
+      return '<option value="' + r.round + '"' + (r === cur ? ' selected' : '') + '>Round ' + r.round + ' · ' + esc(scopeLabel(r.scope)) + ' — score ' + r.score.overall + ' (' + r.score.grade + ')</option>';
     }).join('') + '</select></label>';
   }
 
@@ -341,7 +345,7 @@
       placements: slug + 'blog.example\nyoutube.com/@' + slug + 'reviews'
     }[kind];
   }
-  function typeBadge(t) { var ct = D.CAMPAIGN_TYPES[t]; return '<span class="type-badge t-' + t + '">' + ct.icon + ' ' + esc(ct.name) + '</span>'; }
+  function typeBadge(t) { var ct = D.CAMPAIGN_TYPES[t]; return '<span class="type-badge t-' + t + '">' + ct.icon + ' ' + esc(ct.platform) + '</span>'; }
 
   function needsBusiness() {
     return !S.account.businessName || !S.account.website;
@@ -352,16 +356,29 @@
   // ---------------------------------------------------------------------------
 
   var NAV = [
-    ['overview', '🏠', 'Overview'], ['setup', '🏢', 'Business & website'], ['campaigns', '📣', 'Campaigns'], ['feed', '🛍️', 'Product feed'],
-    ['previews', '👁️', 'Ad previews'], ['simulate', '▶️', 'Run simulation'], ['reports', '📊', 'Reports'], ['channels', '🧭', 'Cross-channel results'], ['feedback', '🎯', 'Score & feedback'],
+    ['overview', '🏠', 'Overview'], ['setup', '🏢', 'Business & website'], ['feed', '🛍️', 'Product feed'],
+    ['#', 'Build by platform'],
+    ['platform/search', '🔍', 'Google Search'], ['platform/display', '🖼️', 'Google Display'], ['platform/video', '▶️', 'YouTube'], ['platform/chatgpt', '💬', 'ChatGPT ads'], ['platform/shopping', '🛒', 'Google Shopping'],
+    ['campaigns', '📋', 'All campaigns'], ['previews', '👁️', 'Ad previews'],
+    ['#', 'Simulate & review'],
+    ['simulate', '🚀', 'Run simulation'], ['reports', '📊', 'Reports'], ['channels', '🧭', 'Cross-channel results'], ['feedback', '🎯', 'Score & feedback'],
+    ['#', 'Help'],
     ['guidelines', '📘', 'Guidelines'], ['settings', '⚙️', 'Settings']
   ];
+  function navKey() {
+    if (UI.route === 'platform') return 'platform/' + UI.params[0];
+    if (UI.route === 'campaign') { var c = campById(UI.params[0]); return c ? 'platform/' + c.type : 'campaigns'; }
+    return UI.route;
+  }
 
   function renderNav() {
-    var active = UI.route === 'campaign' ? 'campaigns' : UI.route;
+    var active = navKey();
     document.getElementById('nav').innerHTML = '<div class="brand"><span class="brand-mark">D</span><div><b>Digital Ad Lab</b><small>Ads practice simulator</small></div></div>' +
       NAV.map(function (n) {
-        var badge = n[0] === 'simulate' ? '<span class="nav-badge">R' + (S.rounds.length + 1) + '</span>' : '';
+        if (n[0] === '#') return '<div class="nav-group">' + esc(n[1]) + '</div>';
+        var pt = n[0].indexOf('platform/') === 0 ? n[0].slice(9) : null;
+        var cnt = pt ? S.campaigns.filter(function (c) { return c.type === pt; }).length : 0;
+        var badge = n[0] === 'simulate' ? '<span class="nav-badge">R' + (S.rounds.length + 1) + '</span>' : cnt ? '<span class="nav-badge">' + cnt + '</span>' : '';
         return '<a href="#/' + n[0] + '" class="' + (active === n[0] ? 'active' : '') + '"><span class="ico" aria-hidden="true">' + n[1] + '</span>' + n[2] + badge + '</a>';
       }).join('') +
       '<div class="nav-foot">' + (S.account.businessName ? '<b>' + esc(S.account.businessName) + '</b><br>' : '') + esc(industry().name) + '<br>' + S.rounds.length + ' round(s) run</div>';
@@ -378,14 +395,14 @@
     if (!r) {
       var steps = [
         ['1', 'Set up your business', 'Enter your business details (or pick a demo business), choose an industry, goal, and conversion value.', '#/setup', !needsBusiness()],
-        ['2', 'Build campaigns', 'Create Search, Display, YouTube, Shopping or ChatGPT ads campaigns. Write ads, pick keywords/audiences, set budgets and bids.', '#/campaigns', S.campaigns.length > 0],
+        ['2', 'Pick a platform and build', 'Open Google Search, Google Display, YouTube, ChatGPT ads or Google Shopping in the menu and create a campaign there.', '#/platform/search', S.campaigns.length > 0],
         ['3', 'Preview your ads', 'See how your ads look on search results, websites, YouTube and Shopping.', '#/previews', false],
-        ['4', 'Run a 30-day round', 'The simulator runs the auctions against competitors and reports clicks, impressions, CPC, conversions and website traffic.', '#/simulate', false],
+        ['4', 'Run a 30-day round', 'Run one platform on its own, or all platforms together. The simulator reports clicks, impressions, CPC, conversions and website traffic.', '#/simulate', false],
         ['5', 'Read feedback, improve, repeat', 'Each round gives a setup score, a performance score, estimated revenue, and specific recommendations.', '#/feedback', false]
       ];
       return h + '<div class="hero card"><h2>How it works</h2><div class="steps">' + steps.map(function (s) {
         return '<a class="step' + (s[4] ? ' done' : '') + '" href="' + s[3] + '"><span class="step-n">' + (s[4] ? '✓' : s[0]) + '</span><div><b>' + s[1] + '</b><p>' + s[2] + '</p></div></a>';
-      }).join('') + '</div></div>' + setupSnapshot();
+      }).join('') + '</div></div>' + platformsCard() + setupSnapshot();
     }
     var prev = prevRoundOf(r);
     var t = r.totals, pt = prev ? prev.totals : null;
@@ -422,7 +439,23 @@
       '</div></div>' : '';
     var top = r.feedback.filter(function (f) { return f.severity !== 'success' && f.severity !== 'info'; }).slice(0, 5);
     var fb = '<div class="card"><h3>Top recommendations</h3>' + (top.length ? top.map(feedbackItem).join('') : '<p>No major issues. Keep optimizing!</p>') + '</div>';
-    return h + '<div class="grid-ov"><div>' + kpis + charts + fb + history + '</div>' + scoreCard + '</div>';
+    return h + '<p class="muted">Latest round: Round ' + r.round + ' · ' + esc(scopeLabel(r.scope)) + '</p><div class="grid-ov"><div>' + kpis + platformsCard() + charts + fb + history + '</div>' + scoreCard + '</div>';
+  }
+
+  function platformsCard() {
+    return '<div class="card"><h3>Your platforms</h3><div class="plat-cards">' + D.PLATFORMS.map(function (t) {
+      var ct = D.CAMPAIGN_TYPES[t];
+      var n = S.campaigns.filter(function (c) { return c.type === t; }).length;
+      var r = lastRoundWith(t);
+      var line = '';
+      if (r) {
+        var cs = r.campaigns.filter(function (c) { return c.type === t; });
+        var cost = U.sum(cs, function (c) { return c.cost; }), val = U.sum(cs, function (c) { return c.value; });
+        var profit = val * (r.accountSnapshot || S.account).margin - cost;
+        line = '<small>R' + r.round + ': ' + fMoney0(cost) + ' spent · <span class="' + (profit >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(profit) + ' profit</span></small>';
+      }
+      return '<a class="plat-card" href="#/platform/' + t + '"><span class="big-ico">' + ct.icon + '</span><b>' + esc(ct.platform) + '</b><small>' + (n ? n + ' campaign' + (n === 1 ? '' : 's') : 'Not started') + '</small>' + line + '</a>';
+    }).join('') + '</div></div>';
   }
 
   function setupSnapshot() {
@@ -471,27 +504,106 @@
   }
 
   // ----- Campaigns list -----
-  function viewCampaigns() {
-    var ev = SC.evaluateSetup(S);
-    var h = header('Campaigns', 'Each campaign has one type, budget and bid strategy. Build as many as your strategy needs.', btn('＋ New campaign', 'newCampaign', null, 'primary'));
-    var body = '';
-    if (UI.newCamp) body += newCampaignPanel();
-    if (!S.campaigns.length && !UI.newCamp) {
-      body += '<div class="card empty-state"><h3>No campaigns yet</h3><p>Create your first campaign, or generate a starter Search campaign from your business details.</p>' + btn('＋ New campaign', 'newCampaign', null, 'primary') + ' ' + (!needsBusiness() ? btn('✨ Starter Search campaign', 'quickStart') : '<a class="btn" href="#/setup">Set up business first</a>') + '</div>';
+  // ----- Platforms: one workspace per ad platform -----
+  function platformName(t) { return (D.CAMPAIGN_TYPES[t] || {}).platform || 'All platforms'; }
+  function scopeLabel(scope) { return !scope || scope === 'all' ? 'All platforms' : platformName(scope) + ' only'; }
+  function lastRoundWith(type) {
+    for (var i = S.rounds.length - 1; i >= 0; i--) if ((S.rounds[i].campaigns || []).some(function (c) { return c.type === type; })) return S.rounds[i];
+    return null;
+  }
+
+  function campaignRow(c, ev, inPlatform) {
+    var mine = ev.checks.filter(function (x) { return x.campaignId === c.id; });
+    var fails = mine.filter(function (x) { return x.status === 'fail'; }).length, warns = mine.filter(function (x) { return x.status === 'warn'; }).length;
+    return '<tr><td><a href="#/campaign/' + c.id + '/settings"><b>' + esc(c.name) + '</b></a></td>' + (inPlatform ? '' : '<td>' + typeBadge(c.type) + '</td>') +
+      '<td>' + btn(c.status === 'enabled' ? '● Enabled' : '❚❚ Paused', 'toggleCampaign', c.id, 'small ' + (c.status === 'enabled' ? 'on' : 'off')) + '</td>' +
+      '<td class="num">' + fMoney(c.dailyBudget) + '</td><td>' + esc(c.type === 'chatgpt' ? U.uniq((c.adGroups || []).map(function (g) { return (D.BID_STRATEGIES[g.bidStrategy] || {}).name || g.bidStrategy; })).join(', ') : (D.BID_STRATEGIES[c.bidStrategy] || {}).name || c.bidStrategy) + '</td>' +
+      '<td class="num">' + (c.type === 'shopping' ? (c.productGroups || []).length + ' product group(s)' : (c.adGroups || []).length) + '</td>' +
+      '<td>' + (c.status !== 'enabled' ? '<span class="muted">paused</span>' : fails ? '<span class="chip critical"><b>✕</b> ' + fails + ' to fix</span> ' : '') + (c.status === 'enabled' && warns ? '<span class="chip warning"><b>!</b> ' + warns + ' to improve</span>' : '') + (c.status === 'enabled' && !fails && !warns ? '<span class="chip good"><b>✓</b> All pass</span>' : '') + '</td>' +
+      '<td class="actions"><a class="btn small" href="#/campaign/' + c.id + '/settings">Edit</a>' + btn('Duplicate', 'dupCampaign', c.id, 'small ghost') + btn('Delete', 'deleteCampaign', c.id, 'small ghost danger') + '</td></tr>';
+  }
+  function campaignTable(list, ev, inPlatform) {
+    return '<div class="table-wrap"><table class="data"><thead><tr><th>Campaign</th>' + (inPlatform ? '' : '<th>Platform</th>') + '<th>Status</th><th class="num">Budget / day</th><th>Bid strategy</th><th class="num">Ad groups</th><th>Setup checks</th><th></th></tr></thead><tbody>' +
+      list.map(function (c) { return campaignRow(c, ev, inPlatform); }).join('') + '</tbody></table></div>';
+  }
+
+  function viewPlatform() {
+    var t = D.CAMPAIGN_TYPES[UI.params[0]] ? UI.params[0] : 'search';
+    var ct = D.CAMPAIGN_TYPES[t];
+    var camps = S.campaigns.filter(function (c) { return c.type === t; });
+    var enabled = camps.filter(function (c) { return c.status === 'enabled'; });
+    var ev = SC.evaluateSetup(SC.scopedState(S, t));
+    var r = lastRoundWith(t);
+    var h = header(ct.icon + ' ' + esc(ct.platform), esc(ct.desc),
+      btn('＋ New ' + esc(ct.platform) + ' campaign', 'newPlatformCampaign', t, 'primary') + (enabled.length ? btn('▶ Run ' + esc(ct.platform) + ' simulation', 'runRound', t) : ''));
+    var steps = [
+      ['1', 'Build', 'Create a campaign and work through its tabs until the checks pass.', camps.length > 0],
+      ['2', 'Preview', 'See how your ads look in place.', false, '#/previews'],
+      ['3', 'Run', 'Simulate 30 days for ' + esc(ct.platform) + ' only, or run all platforms together.', !!r, '#/simulate'],
+      ['4', 'Review', 'Read the results and feedback below, then improve and run again.', !!r]
+    ];
+    h += '<div class="plat-steps">' + steps.map(function (s) {
+      var inner = '<span class="step-n">' + (s[3] ? '✓' : s[0]) + '</span><div><b>' + s[1] + '</b><p>' + s[2] + '</p></div>';
+      return s[4] ? '<a class="plat-step' + (s[3] ? ' done' : '') + '" href="' + s[4] + '">' + inner + '</a>' : '<div class="plat-step' + (s[3] ? ' done' : '') + '">' + inner + '</div>';
+    }).join('') + '</div>';
+    if (UI.newCamp && UI.newCamp.fixed === t) h += newCampaignPanel();
+    if (!camps.length && !(UI.newCamp && UI.newCamp.fixed === t)) {
+      h += '<div class="card empty-state"><h3>No ' + esc(ct.platform) + ' campaigns yet</h3><p>Create one to start. Each campaign has its own budget, bidding, targeting and ads.</p>' +
+        btn('＋ New ' + esc(ct.platform) + ' campaign', 'newPlatformCampaign', t, 'primary') +
+        (t === 'search' ? ' ' + (!needsBusiness() ? btn('✨ Starter Search campaign from my business details', 'quickStart') : '<a class="btn" href="#/setup">Add business details first</a>') : '') +
+        ((t === 'shopping') && !S.products.length ? '<p class="warn-text">Google Shopping builds ads from your product feed. <a href="#/feed">Add products first.</a></p>' : '') + '</div>';
+    } else if (camps.length) {
+      h += '<div class="card"><h3>Your ' + esc(ct.platform) + ' campaigns (' + camps.length + ')</h3>' + campaignTable(camps, ev, true) +
+        (enabled.length ? '' : '<p class="warn-text">All ' + esc(ct.platform) + ' campaigns are paused. Enable one to run a simulation.</p>') + '</div>';
     }
-    if (S.campaigns.length) {
-      body += '<div class="card"><div class="table-wrap"><table class="data"><thead><tr><th>Campaign</th><th>Type</th><th>Status</th><th class="num">Budget / day</th><th>Bid strategy</th><th class="num">Ad groups</th><th>Setup checks</th><th></th></tr></thead><tbody>' +
-        S.campaigns.map(function (c) {
-          var mine = ev.checks.filter(function (x) { return x.campaignId === c.id; });
-          var fails = mine.filter(function (x) { return x.status === 'fail'; }).length, warns = mine.filter(function (x) { return x.status === 'warn'; }).length;
-          return '<tr><td><a href="#/campaign/' + c.id + '/settings"><b>' + esc(c.name) + '</b></a></td><td>' + typeBadge(c.type) + '</td>' +
-            '<td>' + btn(c.status === 'enabled' ? '● Enabled' : '❚❚ Paused', 'toggleCampaign', c.id, 'small ' + (c.status === 'enabled' ? 'on' : 'off')) + '</td>' +
-            '<td class="num">' + fMoney(c.dailyBudget) + '</td><td>' + esc(c.type === 'chatgpt' ? U.uniq((c.adGroups || []).map(function (g) { return (D.BID_STRATEGIES[g.bidStrategy] || {}).name || g.bidStrategy; })).join(', ') : (D.BID_STRATEGIES[c.bidStrategy] || {}).name || c.bidStrategy) + '</td>' +
-            '<td class="num">' + (c.type === 'shopping' ? (c.productGroups || []).length + ' product group(s)' : (c.adGroups || []).length) + '</td>' +
-            '<td>' + (c.status !== 'enabled' ? '<span class="muted">paused</span>' : fails ? '<span class="chip critical"><b>✕</b> ' + fails + ' to fix</span> ' : '') + (c.status === 'enabled' && warns ? '<span class="chip warning"><b>!</b> ' + warns + ' to improve</span>' : '') + (c.status === 'enabled' && !fails && !warns ? '<span class="chip good"><b>✓</b> All good</span>' : '') + '</td>' +
-            '<td class="actions"><a class="btn small" href="#/campaign/' + c.id + '/settings">Edit</a>' + btn('Duplicate', 'dupCampaign', c.id, 'small ghost') + btn('Delete', 'deleteCampaign', c.id, 'small ghost danger') + '</td></tr>';
+    h += platformResults(t, r);
+    return h;
+  }
+
+  function platformResults(t, r) {
+    var ct = D.CAMPAIGN_TYPES[t];
+    if (!r) return '<div class="card"><h3>Results</h3><p class="muted">No ' + esc(ct.platform) + ' results yet. Run a simulation to see clicks, costs, conversions and feedback here.</p></div>';
+    var X = A.channels.analyze(S, r, null);
+    var m = X.channels.find(function (x) { return x.type === t; });
+    if (!m) return '';
+    var names = r.campaigns.filter(function (c) { return c.type === t; }).map(function (c) { return c.name; });
+    var k = function (label, val, sub) { return '<div class="kpi"><span>' + label + '</span><b>' + val + '</b>' + (sub ? '<small class="muted">' + sub + '</small>' : '') + '</div>'; };
+    var h = '<div class="card"><div class="card-head"><h3>Latest results · Round ' + r.round + ' <span class="chip neutral">' + esc(scopeLabel(r.scope)) + '</span></h3>' + verdictChip(m.verdict) + '</div><p>' + esc(m.verdict.why) + '</p>' +
+      '<div class="kpis">' + k('Impressions', fInt(m.impressions)) + k('Clicks', fInt(m.clicks)) + k('CTR', fPct(m.benchCtr), 'typical ' + fPct(m.bench.ctr)) +
+      k(t === 'video' ? 'Avg. CPM' : 'Avg. CPC', t === 'video' ? fMoney(m.cpm) : fMoney(m.cpc)) + k('Cost', fMoney0(m.cost)) +
+      k('Conversions', r.tracked ? fInt(m.conversions) : '—', r.tracked ? '' : 'not tracked') + k('Cost / conv.', r.tracked && m.conversions ? fMoney(m.cpa) : '—') +
+      k('Revenue (est.)', r.tracked ? fMoney0(m.value) : '—') + k('ROAS', r.tracked ? fX(m.roas) : '—', 'break-even ' + fX(X.ctx.be)) + k('Profit (est.)', fMoney0(m.profit)) + '</div>' +
+      '<div class="xc-cols"><div class="xc-col good"><h4>✓ What is working</h4>' + (m.diagnosis.good.length ? '<ul>' + m.diagnosis.good.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul>' : '<p class="muted">Nothing stands out yet.</p>') + '</div>' +
+      '<div class="xc-col bad"><h4>✕ What is not working</h4>' + (m.diagnosis.bad.length ? '<ul>' + m.diagnosis.bad.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul>' : '<p class="muted">No major problems found.</p>') + '</div>' +
+      '<div class="xc-col next"><h4>→ What to do next</h4><ul>' + m.diagnosis.next.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul></div></div>';
+    var fb = r.feedback.filter(function (f) { return f.severity !== 'success' && f.severity !== 'info' && names.some(function (n) { return f.area === n || f.area === 'Setup · ' + n; }); });
+    if (fb.length) h += '<h4>Feedback for these campaigns (' + fb.length + ')</h4>' + fb.slice(0, 3).map(feedbackItem).join('') + (fb.length > 3 ? '<details class="fb-fold"><summary>Show ' + (fb.length - 3) + ' more</summary>' + fb.slice(3).map(feedbackItem).join('') + '</details>' : '');
+    h += '<div class="row wrap">' + '<a class="btn" href="#/reports/' + ct.report + '">Detailed report →</a><a class="btn ghost" href="#/reports/campaigns">All reports</a><a class="btn ghost" href="#/feedback">Score & feedback</a>' + (r.scope === 'all' ? '<a class="btn ghost" href="#/channels">Compare with other platforms</a>' : '') + '</div></div>';
+    var hist = S.rounds.filter(function (x) { return (x.campaigns || []).some(function (c) { return c.type === t; }); });
+    if (hist.length > 1) {
+      h += '<div class="card"><h3>' + esc(ct.platform) + ' across rounds</h3><div class="table-wrap"><table class="data"><thead><tr><th>Round</th><th>Ran</th><th class="num">Spend</th><th class="num">Clicks</th><th class="num">Conv.</th><th class="num">ROAS</th><th class="num">Profit (est.)</th></tr></thead><tbody>' +
+        hist.map(function (x) {
+          var cs = x.campaigns.filter(function (c) { return c.type === t; });
+          var mg = (x.accountSnapshot || S.account).margin;
+          var cost = U.sum(cs, function (c) { return c.cost; }), val = U.sum(cs, function (c) { return c.value; });
+          return '<tr' + (x === r ? ' class="hl"' : '') + '><td>R' + x.round + '</td><td>' + esc(scopeLabel(x.scope)) + '</td><td class="num">' + fMoney0(cost) + '</td><td class="num">' + fInt(U.sum(cs, function (c) { return c.clicks; })) + '</td><td class="num">' + (x.tracked ? fInt(U.sum(cs, function (c) { return c.conversions; })) : '—') + '</td><td class="num">' + fX(U.safeDiv(val, cost)) + '</td><td class="num ' + (val * mg - cost >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(val * mg - cost) + '</td></tr>';
         }).join('') + '</tbody></table></div></div>';
     }
+    return h;
+  }
+
+  function viewCampaigns() {
+    var ev = SC.evaluateSetup(S);
+    var h = header('All campaigns', 'Every campaign across your platforms. To create one, open a platform in the menu (or use the button).', btn('＋ New campaign', 'newCampaign', null, 'primary'));
+    var body = '';
+    if (UI.newCamp && !UI.newCamp.fixed) body += newCampaignPanel();
+    body += '<div class="plat-cards">' + D.PLATFORMS.map(function (t) {
+      var ct = D.CAMPAIGN_TYPES[t];
+      var n = S.campaigns.filter(function (c) { return c.type === t; }).length;
+      return '<a class="plat-card" href="#/platform/' + t + '"><span class="big-ico">' + ct.icon + '</span><b>' + esc(ct.platform) + '</b><small>' + n + ' campaign' + (n === 1 ? '' : 's') + '</small></a>';
+    }).join('') + '</div>';
+    if (!S.campaigns.length && !UI.newCamp) body += '<div class="card empty-state"><h3>No campaigns yet</h3><p>Pick a platform above to build your first campaign.</p></div>';
+    if (S.campaigns.length) body += '<div class="card">' + campaignTable(S.campaigns, ev) + '</div>';
     return h + body;
   }
 
@@ -505,12 +617,14 @@
       var ct = D.CAMPAIGN_TYPES[t];
       var fit = goal ? goal.fit[t] : 0;
       var fitLabel = fit >= 3 ? '<span class="chip good"><b>✓</b> Recommended</span>' : fit === 2 ? '<span class="chip info"><b>~</b> Works</span>' : '<span class="chip neutral">Less suited</span>';
-      return '<button type="button" class="pick type' + (nc.type === t ? ' sel' : '') + '" data-action="pickType" data-args="' + esc(JSON.stringify(t)) + '"><span class="big-ico">' + ct.icon + '</span><b>' + esc(ct.name) + '</b><small>' + esc(ct.desc) + '</small>' + (goal ? fitLabel : '') + '</button>';
+      return '<button type="button" class="pick type' + (nc.type === t ? ' sel' : '') + '" data-action="pickType" data-args="' + esc(JSON.stringify(t)) + '"><span class="big-ico">' + ct.icon + '</span><b>' + esc(ct.platform) + '</b><small>' + esc(ct.desc) + '</small>' + (goal ? fitLabel : '') + '</button>';
     }).join('');
-    return '<div class="card new-camp"><h3>New campaign</h3><p class="lbl">1 · What is this campaign\'s objective?</p><div class="picks">' + goals + '</div>' +
-      '<p class="lbl">2 · Choose a campaign type ' + guideLink('ACC-3') + '</p><div class="picks types">' + types + '</div>' +
-      (nc.type === 'video' ? '<p class="lbl">3 · Select a campaign subtype ' + guideLink('VID-4') + '</p>' + subtypePicker(nc.subtype || 'views', 'pickSubtype', nc.goal) : '') +
-      (nc.type === 'chatgpt' ? '<p class="lbl">3 · Objective ' + guideLink('CGPT-1') + '</p><div class="obj-picks">' + Object.keys(D.CHATGPT.objectives).map(function (k) {
+    var fixed = nc.fixed;
+    return '<div class="card new-camp"><h3>New ' + (fixed ? esc(platformName(fixed)) + ' ' : '') + 'campaign</h3><p class="lbl">1 · What is this campaign\'s objective?</p><div class="picks">' + goals + '</div>' +
+      (fixed ? (goal && goal.fit[fixed] < 2 ? '<p class="warn-text">' + esc(platformName(fixed)) + ' is less suited to a ' + esc(goal.name) + ' goal. You can still build it; the feedback will explain the trade-off.</p>' : '') :
+        '<p class="lbl">2 · Choose a platform ' + guideLink('ACC-3') + '</p><div class="picks types">' + types + '</div>') +
+      (nc.type === 'video' ? '<p class="lbl">' + (fixed ? '2' : '3') + ' · Select a campaign subtype ' + guideLink('VID-4') + '</p>' + subtypePicker(nc.subtype || 'views', 'pickSubtype', nc.goal) : '') +
+      (nc.type === 'chatgpt' ? '<p class="lbl">' + (fixed ? '2' : '3') + ' · Objective ' + guideLink('CGPT-1') + '</p><div class="obj-picks">' + Object.keys(D.CHATGPT.objectives).map(function (k) {
         var o = D.CHATGPT.objectives[k];
         return '<button type="button" class="pick' + ((nc.objective || 'clicks') === k ? ' sel' : '') + '" data-action="pickChatObjective" data-args="' + esc(JSON.stringify(k)) + '"><b>' + esc(o.name) + '</b><small>' + esc(o.desc) + '</small></button>';
       }).join('') + '</div><p class="help">You cannot change the objective after the campaign is created.</p>' : '') +
@@ -563,15 +677,15 @@
     if (tab === 'assets') content = assetsEditor(c, base);
     if (tab === 'products') content = productGroupsEditor(c, base);
     if (tab === 'checks') content = '<div class="card">' + live('camp-checks-full', function () { return campaignChecks(c, true); }) + '</div>';
-    var h = '<div class="page-head"><div><a href="#/campaigns" class="back">← Campaigns</a><h1>' + esc(c.name) + '</h1><p class="sub">' + typeBadge(c.type) + ' · ' + fMoney(c.dailyBudget) + '/day · ' + esc((D.BID_STRATEGIES[c.bidStrategy] || {}).name || '') + '</p></div>' +
-      '<div class="page-actions">' + btn(c.status === 'enabled' ? '● Enabled' : '❚❚ Paused', 'toggleCampaign', c.id, c.status === 'enabled' ? 'on' : 'off') + '<a class="btn primary" href="#/simulate">Run simulation →</a></div></div>';
+    var h = '<div class="page-head"><div><a href="#/platform/' + c.type + '" class="back">← ' + esc(platformName(c.type)) + '</a><h1>' + esc(c.name) + '</h1><p class="sub">' + typeBadge(c.type) + ' · ' + fMoney(c.dailyBudget) + '/day · ' + esc((D.BID_STRATEGIES[c.bidStrategy] || {}).name || '') + '</p></div>' +
+      '<div class="page-actions">' + btn(c.status === 'enabled' ? '● Enabled' : '❚❚ Paused', 'toggleCampaign', c.id, c.status === 'enabled' ? 'on' : 'off') + btn('▶ Run ' + esc(platformName(c.type)) + ' simulation', 'runRound', c.type, 'primary') + '</div></div>';
     var side = tab === 'checks' || tab === 'review' ? '' : '<aside class="side-checks card"><h4>Checks for this campaign</h4>' + live('camp-checks', function () { return campaignChecks(c, false); }) + '</aside>';
     return h + tabHtml + '<div class="editor' + (side ? '' : ' full') + '"><div class="editor-main">' + content + '</div>' + side + '</div>';
   }
 
   // ----- ChatGPT ads editor (mirrors Ads Manager: Create campaign → Ad groups & ads → Review) -----
   function chatLocked(c) {
-    return S.rounds.some(function (r) { return (r.config || []).some(function (x) { return x.id === c.id; }); });
+    return S.rounds.some(function (r) { return (r.campaigns || []).some(function (x) { return x.id === c.id; }); });
   }
 
   function chatSettings(c, base) {
@@ -716,7 +830,7 @@
       row('Ads from', c.source === 'feed' ? 'Product feed (' + S.products.filter(function (p) { return M.feedQuality(p).approved; }).length + ' approved products)' : approved + ' of ' + ads + ' ads approved') +
       row('Ad groups', (c.adGroups || []).length + ' · ' + hints + ' context hints') + '</dl></div>' +
       '<div class="card"><h3>Checks before launch</h3>' + live('camp-checks-full', function () { return campaignChecks(c, true); }) + '</div>' +
-      '<div class="row"><a class="btn primary" href="#/simulate">Publish & run simulation →</a></div>';
+      '<div class="row">' + btn('▶ Publish & run ChatGPT ads simulation', 'runRound', 'chatgpt', 'primary') + ' <a class="btn ghost" href="#/simulate">Run all platforms</a></div>';
   }
 
   function campaignChecks(c, full) {
@@ -1179,6 +1293,7 @@
     var X = A.channels.analyze(S, r, prevRoundOf(r));
     var h = header('Cross-channel results', 'Round ' + r.round + ' · how every channel performed side by side, and what to do next', roundSelect() + btn('⬇ Download PDF', 'downloadPdf', null, 'primary'));
     h += '<nav class="tabs">' + XC_TABS.map(function (t) { return '<a href="#/channels/' + t[0] + '" class="' + (tab === t[0] ? 'active' : '') + '">' + t[1] + '</a>'; }).join('') + '</nav>';
+    if (r.scope && r.scope !== 'all') h += '<div class="card warn-card"><p><b>Round ' + r.round + ' ran ' + esc(platformName(r.scope)) + ' only</b>, so there are no other channels to compare. Run all platforms together to compare them side by side.</p><a class="btn small primary" href="#/simulate">Run all platforms</a></div>';
     if (!X.channels.length) return h + '<div class="card empty-state"><p>No campaigns ran in this round.</p></div>';
     if (tab === 'compare') return h + xcCompare(X, r);
     if (tab === 'review') return h + xcReview(X, r);
@@ -1295,19 +1410,28 @@
   // ----- Simulate -----
   function viewSimulate() {
     var n = S.rounds.length + 1;
-    var ev = SC.evaluateSetup(S);
-    var enabled = S.campaigns.filter(function (c) { return c.status === 'enabled'; });
+    var countOn = function (t) { return S.campaigns.filter(function (c) { return c.status === 'enabled' && (t === 'all' || c.type === t); }).length; };
+    var scope = UI.simScope || 'all';
+    if (scope !== 'all' && !countOn(scope)) scope = 'all';
+    var ev = SC.evaluateSetup(SC.scopedState(S, scope));
+    var enabled = S.campaigns.filter(function (c) { return c.status === 'enabled' && (scope === 'all' || c.type === scope); });
     var fails = ev.checks.filter(function (x) { return x.status === 'fail'; });
-    var h = header('Run simulation', 'Each round simulates 30 days of auctions against competitors in the ' + esc(industry().name) + ' market.');
-    h += '<div class="grid-2-1"><div class="card run-card"><h2>Round ' + n + '</h2>' +
+    var h = header('Run simulation', 'Each round simulates 30 days of auctions against competitors in the ' + esc(industry().name) + ' market. Run one platform on its own, or all platforms together.');
+    h += '<div class="card"><h3>What do you want to simulate?</h3><div class="scope-picks">' + ['all'].concat(D.PLATFORMS).map(function (t) {
+      var k = countOn(t);
+      var ct = D.CAMPAIGN_TYPES[t];
+      return '<button type="button" class="pick scope' + (scope === t ? ' sel' : '') + (k ? '' : ' disabled') + '"' + (k ? ' data-action="setSimScope" data-args="' + esc(JSON.stringify(t)) + '"' : ' disabled') + '><span class="big-ico">' + (ct ? ct.icon : '🌐') + '</span><b>' + (ct ? esc(ct.platform) + ' only' : 'All platforms') + '</b><small>' + (k ? k + ' enabled campaign' + (k === 1 ? '' : 's') : 'No enabled campaigns') + '</small></button>';
+    }).join('') + '</div><p class="help">A single-platform round is compared with your previous round of the same kind. Run all platforms together to compare channels in Cross-channel results.</p></div>';
+    h += '<div class="grid-2-1"><div class="card run-card"><h2>Round ' + n + ' · ' + esc(scopeLabel(scope)) + '</h2>' +
       '<p>The simulator will: estimate search demand for your keywords and audiences → run ad auctions (your bid × Quality Score × assets vs. competitors) → apply your budget → generate clicks, conversions, revenue and website traffic → score your setup and results → give feedback.</p>' +
       '<div class="preflight"><div>' + ring(ev.score, 'Setup score now', 110) + '</div><div><p><b>' + enabled.length + '</b> enabled campaign(s), total budget <b>' + fMoney(U.sum(enabled, function (c) { return Number(c.dailyBudget) || 0; })) + '/day</b>.</p>' +
       (fails.length ? '<p class="warn-text">' + fails.length + ' setup check(s) failing — the round will still run, but expect weaker results.</p><ul class="issues">' + fails.slice(0, 5).map(function (f) { return '<li>' + esc(f.title) + (f.campaign ? ' <span class="muted">(' + esc(f.campaign) + ')</span>' : '') + '</li>'; }).join('') + '</ul>' : '<p class="good-text">✓ No failing setup checks.</p>') +
-      '</div></div>' + (enabled.length ? btn('▶ Run round ' + n + ' (30 days)', 'runRound', null, 'primary big') : '<p class="bad-text">Enable at least one campaign to run a round.</p>') + '</div>' +
+      '</div></div>' + (enabled.length ? btn('▶ Run round ' + n + ': ' + esc(scopeLabel(scope)) + ' (30 days)', 'runRound', scope, 'primary big') : '<p class="bad-text">Enable at least one campaign to run a round.</p>') + '</div>' +
       '<div class="card"><h3>Tips</h3><ul class="tips"><li>Change one or two things per round so you can tell what worked.</li><li>Smart Bidding needs a round to learn after you change it.</li><li>Check Reports → Search terms after every round and add negatives.</li><li>Market conditions (competition, seasonality) shift a little each round.</li></ul></div></div>';
     if (S.rounds.length) {
       h += '<div class="card"><h3>Round history</h3>' + dataTable('rounds', [
         { key: 'round', label: 'Round', fmt: function (r) { return 'R' + r.round; } },
+        { key: 'scope', label: 'Ran', fmt: function (r) { return esc(scopeLabel(r.scope)); } },
         { key: 'score', label: 'Score', num: true, sort: function (r) { return r.score.overall; }, fmt: function (r) { return r.score.overall + ' (' + r.score.grade + ')'; } },
         { key: 'setup', label: 'Setup', num: true, sort: function (r) { return r.score.setup; }, fmt: function (r) { return r.score.setup; } },
         { key: 'perf', label: 'Performance', num: true, sort: function (r) { return r.score.performance; }, fmt: function (r) { return r.score.performance; } },
@@ -1329,7 +1453,7 @@
     var r = currentRound();
     if (!r) return header('Reports') + '<div class="card empty-state"><p>Run a simulation round to see reports.</p><a class="btn primary" href="#/simulate">Run simulation</a></div>';
     var tab = UI.params[0] || 'campaigns';
-    var h = header('Reports', 'Round ' + r.round + ' · 30 days' + (r.tracked ? '' : ' · <span class="warn-text">Conversion tracking was off — conversion columns are empty</span>'), roundSelect());
+    var h = header('Reports', 'Round ' + r.round + ' · ' + esc(scopeLabel(r.scope)) + ' · 30 days' + (r.tracked ? '' : ' · <span class="warn-text">Conversion tracking was off — conversion columns are empty</span>'), roundSelect());
     h += '<nav class="tabs">' + REPORT_TABS.map(function (t) { return '<a href="#/reports/' + t[0] + '" class="' + (tab === t[0] ? 'active' : '') + '">' + t[1] + '</a>'; }).join('') + '</nav>';
     var metricCols = function (extra) {
       return [
@@ -1574,7 +1698,7 @@
     if (!r) return header('Score & feedback') + '<div class="card empty-state"><p>Run a round to get your score and feedback. Meanwhile, here is your current setup checklist.</p><a class="btn primary" href="#/simulate">Run simulation</a></div>' + setupChecklist(SC.evaluateSetup(S).checks, 'Current setup checklist');
     var sc = r.score;
     var acc = r.accountSnapshot || S.account;
-    var h = header('Score & feedback', 'Round ' + r.round + ' results and coaching', roundSelect() + btn('⬇ Download PDF report', 'downloadPdf', null, 'primary') + (FRAMED ? '' : '<button class="btn ghost" data-action="print">🖨 Print</button>'));
+    var h = header('Score & feedback', 'Round ' + r.round + ' · ' + esc(scopeLabel(r.scope)) + ' · results and coaching', roundSelect() + btn('⬇ Download PDF report', 'downloadPdf', null, 'primary') + (FRAMED ? '' : '<button class="btn ghost" data-action="print">🖨 Print</button>'));
     var t = r.totals;
     h += '<div class="card score-hero"><div class="score-rings">' + ring(sc.overall, 'Overall · grade ' + sc.grade, 140) + ring(sc.setup, 'Setup (45%)', 110) + ring(sc.performance, 'Performance (55%)', 110) + '</div>' +
       '<div class="money"><div><span>Revenue (est.)</span><b>' + fMoney0(t.value) + '</b></div><div><span>Ad cost</span><b>' + fMoney0(t.cost) + '</b></div><div><span>Profit after ads (est.)</span><b class="' + (sc.profit >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(sc.profit) + '</b></div><div><span>ROAS</span><b>' + fX(t.roas) + '</b><small>break-even ' + fX(sc.breakEvenRoas) + '</small></div><div><span>Conversions</span><b>' + fInt(t.conversions) + '</b>' + (r.tracked ? '' : '<small class="warn-text">estimated — not tracked</small>') + '</div></div>' +
@@ -1802,7 +1926,7 @@
   }
 
   var VIEWS = {
-    overview: viewOverview, setup: viewSetup, campaigns: viewCampaigns, campaign: viewCampaign, feed: viewFeed, previews: viewPreviews,
+    overview: viewOverview, setup: viewSetup, campaigns: viewCampaigns, platform: viewPlatform, campaign: viewCampaign, feed: viewFeed, previews: viewPreviews,
     simulate: viewSimulate, reports: viewReports, channels: viewChannels, feedback: viewFeedback, guidelines: viewGuidelines, settings: viewSettings
   };
 
@@ -1816,7 +1940,7 @@
     var v = VIEWS[UI.route] || viewOverview;
     var main = document.getElementById('main');
     main.innerHTML = v();
-    document.title = 'Digital Ad Lab · ' + ((NAV.find(function (n) { return n[0] === UI.route; }) || [0, 0, 'Campaign editor'])[2]);
+    document.title = 'Digital Ad Lab · ' + ((NAV.find(function (n) { return n[0] === navKey(); }) || [0, 0, 'Campaign editor'])[2]);
     wireImages(main);
     if (keepScroll) window.scrollTo(0, y);
     if (UI.route === 'guidelines' && UI.params[0]) {
@@ -1923,6 +2047,8 @@
       save(); render(true);
     },
     cancelNew: function () { UI.newCamp = null; render(); },
+    setSimScope: function (el, t) { UI.simScope = t; render(true); },
+    newPlatformCampaign: function (el, t) { UI.newCamp = { type: t, goal: S.account.goal, fixed: t }; if (UI.route !== 'platform' || UI.params[0] !== t) location.hash = '#/platform/' + t; render(); },
     createCampaign: function () {
       var nc = UI.newCamp;
       if (!nc || !nc.type) { toast('Choose a campaign type.'); return; }
@@ -2037,18 +2163,20 @@
     },
     toggleDevice: function () { UI.device = UI.device === 'desktop' ? 'mobile' : 'desktop'; render(true); },
     shuffle: function () { UI.combo++; refreshLive(); if (UI.route === 'previews') render(true); },
-    runRound: function () {
-      var btnEl = document.querySelector('[data-action="runRound"]');
-      if (btnEl) { btnEl.textContent = 'Simulating 30 days…'; btnEl.disabled = true; }
+    runRound: function (el, scope) {
+      scope = typeof scope === 'string' && scope ? scope : (UI.simScope || 'all');
+      if (!S.campaigns.some(function (c) { return c.status === 'enabled' && (scope === 'all' || c.type === scope); })) { toast('Enable at least one ' + (scope === 'all' ? '' : platformName(scope) + ' ') + 'campaign first.'); return; }
+      if (el) { el.textContent = 'Simulating 30 days…'; el.disabled = true; }
       setTimeout(function () {
         try {
-          var r = SC.scoreRound(S, E.simulateRound(S));
+          var r = SC.scoreRound(S, E.simulateRound(S, { scope: scope }));
           S.rounds.push(r);
           UI.round = null;
+          UI.newCamp = null;
           save();
-          location.hash = '#/feedback';
+          location.hash = scope === 'all' ? '#/feedback' : '#/platform/' + scope;
           render();
-          toast('Round ' + r.round + ' complete: score ' + r.score.overall + ' (' + r.score.grade + ')');
+          toast('Round ' + r.round + ' (' + scopeLabel(scope) + ') complete: score ' + r.score.overall + ' (' + r.score.grade + ')');
         } catch (e) {
           console.error(e);
           toast('Simulation error: ' + e.message);
