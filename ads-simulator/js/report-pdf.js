@@ -206,6 +206,13 @@
         return [v.name, v.campaign, int(v.impressions), int(v.views), pct(v.viewRate, 1), money(v.cost), int(v.clicks), tracked ? int(v.conversions) : 'n/t', '+' + (v.adRecallLift || 0).toFixed(1) + ' pts'];
       }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5 } });
     }
+    var cgs = r.campaigns.filter(function (c) { return c.type === 'chatgpt' && !c.errors.length; });
+    if (cgs.length) {
+      table(['ChatGPT campaign', 'Objective', 'Impr.', 'Clicks', 'CTR', 'Avg. CPC', 'Avg. CPM', 'Conv. (actual)', 'Conv. (reported)', 'Match rate'], cgs.map(function (c) {
+        return [c.name, (D.CHATGPT.objectives[c.objective] || {}).name || '-', int(c.impressions), int(c.clicks), pct(c.ctr), money(c.cpc), money(c.impressions ? c.cost * 1000 / c.impressions : 0),
+          tracked ? int(c.conversions) : 'n/t', tracked ? int(c.reportedConversions) : 'n/t', tracked ? pct(c.matchRate, 0) : 'n/t'];
+      }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5 } });
+    }
     if (!tracked) {
       doc.setFont('helvetica', 'italic'); doc.setFontSize(8); setColor(MUTED);
       text('n/t = not tracked. Conversion tracking was off, so these conversions would be invisible in a real account.', M, y - 8);
@@ -249,6 +256,40 @@
         y += lines.length * 11 + 4;
       });
       y += 8;
+    }
+
+    // ----- Cross-channel results -----
+    if (AdSim.channels) {
+      var X = AdSim.channels.analyze(state, r, prev);
+      if (X.channels.length) {
+        doc.addPage(); y = M;
+        heading('Cross-channel results');
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setColor(MUTED);
+        var intro = doc.splitTextToSize(clean('Search, Shopping and ChatGPT ads are judged on profit (break-even ROAS ' + X.ctx.be.toFixed(2) + 'x); Display and YouTube on profit and on the awareness they build.' + (X.best ? ' Strongest channel: ' + X.best.name + '.' : '') + (X.worst ? ' Weakest: ' + X.worst.name + '.' : '')), W - 2 * M);
+        doc.text(intro, M, y); y += intro.length * 11 + 6;
+        table(['Channel', 'Verdict', 'Spend', '% of spend', 'CTR', 'Avg. CPC', 'Conv.', 'Cost / conv.', 'ROAS', 'Profit (est.)'], X.channels.map(function (c) {
+          return [c.name, c.verdict.label, money(c.cost, 0), pct(c.shareSpend, 0), pct(c.ctr), c.clicks ? money(c.cpc) : '-', tracked ? int(c.conversions) : 'n/t', tracked && c.conversions ? money(c.cpa) : '-', tracked ? x(c.roas) : 'n/t', money(c.profit, 0)];
+        }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5 } });
+        table(['Campaign', 'Channel', 'Verdict', 'Why'], X.campaigns.map(function (c) { return [c.name, D.CAMPAIGN_TYPES[c.type].name, c.verdict.label, c.verdict.why]; }),
+          { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5, overflow: 'linebreak' }, columnStyles: { 0: { cellWidth: 120 }, 1: { cellWidth: 70 }, 2: { cellWidth: 70 } } });
+        heading('What worked, what did not, and what to do next');
+        var dec = (state.decisions || {})['r' + r.round] || {};
+        var DEC = { scale: 'Scale up', keep: 'Keep as is', fix: 'Fix, then re-test', cut: 'Cut back budget', pause: 'Pause' };
+        table(['Channel', 'Working', 'Not working', 'Next step', 'Student decision'], X.channels.map(function (c) {
+          var d = dec[c.type] || {};
+          var li = function (arr) { return arr.length ? arr.map(function (z) { return '- ' + z; }).join('\n') : '-'; };
+          return [c.name + '\n' + c.verdict.label, li(c.diagnosis.good), li(c.diagnosis.bad), li(c.diagnosis.next), (DEC[d.choice] || '-') + (d.notes ? '\n' + d.notes : '')];
+        }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5, overflow: 'linebreak', valign: 'top' }, columnStyles: { 0: { cellWidth: 70, fontStyle: 'bold' } } });
+        heading('Budget plan for next round');
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setColor(INK);
+        X.plan.concat(dec.reflection ? [{ text: 'Student reflection: ' + dec.reflection }] : []).forEach(function (p, i) {
+          var lines = doc.splitTextToSize(clean((p.text.indexOf('Student reflection') === 0 ? '' : (i + 1) + '. ') + p.text), W - 2 * M);
+          ensure(lines.length * 11 + 4);
+          doc.text(lines, M, y);
+          y += lines.length * 11 + 4;
+        });
+        y += 8;
+      }
     }
 
     // ----- Website analytics -----

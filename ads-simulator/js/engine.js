@@ -1205,6 +1205,247 @@
   }
 
   // ---------------------------------------------------------------------------
+  // ChatGPT ads
+  // ---------------------------------------------------------------------------
+
+  // Market benchmarks for ChatGPT ads in an industry: CPM $25–70, CTR ~0.7%,
+  // CPC ≈ $4 retail … $10 software/finance. Conversion rate is set so an average advertiser's
+  // cost per conversion is ~1.1× the Search benchmark (good hints and copy do better).
+  function chatBench(ind, market) {
+    var f = U.clamp(ind.search.cpc / 2.5, 0.8, 2.0);
+    var cpm = D.CHATGPT.cpm * f * market.competition;
+    var cpc = cpm / (1000 * D.CHATGPT.ctr);
+    var searchCpa = ind.search.cpc / ind.search.cvr;
+    return { cpm: cpm, cpc: cpc, ctr: D.CHATGPT.ctr, cvr: Math.min(0.12, cpc / (1.1 * searchCpa)) };
+  }
+
+  var CHAT_INTENT = {
+    decision: { ctr: 1.35, cvr: 1.45 },
+    research: { ctr: 1.0, cvr: 0.9 },
+    info: { ctr: 0.6, cvr: 0.3 }
+  };
+
+  // Turn a context hint into the kind of message a person might send ChatGPT
+  function chatPrompt(hint, intent) {
+    var h = String(hint).trim().replace(/[?.!]+$/, '');
+    var cap = h.charAt(0).toUpperCase() + h.slice(1);
+    if (/^(how|what|which|where|why|when|is|are|can|should|do|does)\b/i.test(h)) return cap + '?';
+    if (/^(finding|choosing|buying|picking|comparing|planning|looking for)\b/i.test(h)) return 'I need help ' + h;
+    if (/^(best|top|cheapest|affordable)\b/i.test(h)) return 'What\'s the ' + h + '?';
+    if (intent === 'decision') return 'Can you recommend ' + h + '?';
+    if (intent === 'info') return 'Tell me about ' + h;
+    return 'What should I consider about ' + h + '?';
+  }
+
+  // Conversations an ad group can be matched to: one cluster per context hint, plus what the
+  // landing page and copy imply. Vague or off-topic hints also pull in loosely related and
+  // sensitive conversations (sensitive ones never show ads).
+  function chatTopics(g, ctx) {
+    var acc = ctx.acc;
+    var hints = M.chatHints(g).slice(0, 40).map(function (h) { return M.hintQuality(h, ctx.vocab); });
+    var sens = D.CHATGPT.sensitiveShare[acc.industry] || 0;
+    var topics = [];
+    var intentOf = function (text) { var i = M.intentOf(text, ctx.state); return i === 'high' || i === 'brand' ? 'decision' : i === 'low' ? 'info' : 'research'; };
+    if (!hints.length) {
+      var t = M.contentTopic(ctx.state);
+      topics.push({ topic: chatPrompt(t, 'research'), hint: '(landing page & ad copy)', intent: 'research', rel: 0.65, w: 1 });
+      topics.push({ topic: chatPrompt(t, 'info'), hint: '(landing page & ad copy)', intent: 'info', rel: 0.45, w: 0.6 });
+    }
+    hints.forEach(function (h) {
+      var intent = intentOf(h.hint);
+      var w = Math.sqrt(1 / h.specificity) * (0.4 + 0.6 * h.relevance);
+      topics.push({ topic: chatPrompt(h.hint, intent), hint: h.hint, intent: intent, rel: U.clamp(0.25 + 0.75 * h.relevance * (0.35 + 0.65 * h.specificity), 0.05, 1), w: w, quality: h });
+      if (h.words <= 2 || h.relevance < 0.4) {
+        // broad hints drift into conversations that are only loosely related
+        topics.push({ topic: 'History and trivia about ' + h.hint, hint: h.hint, intent: 'info', rel: 0.12, w: w * (h.words <= 1 ? 0.9 : 0.4), offTarget: true });
+      }
+    });
+    if (sens) {
+      var base = hints.length ? hints[0].hint : M.contentTopic(ctx.state);
+      var label = acc.industry === 'health' ? 'Personal health or mental-health questions about ' : 'Sensitive personal questions about ';
+      topics.push({ topic: label + base, hint: hints.length ? hints[0].hint : '(landing page)', intent: 'research', rel: 0.6, w: U.sum(topics, function (x) { return x.w; }) * sens / (1 - sens), sensitive: true });
+    }
+    var coverage = hints.length ? 0.45 + 0.55 * (1 - Math.exp(-U.sum(hints, function (h) { return h.score; }) / 4)) : 0.45;
+    var wsum = U.sum(topics, function (x) { return x.w; }) || 1;
+    topics.forEach(function (x) { x.share = x.w / wsum * coverage * (1 + (x.offTarget ? 0.4 : 0)); });
+    return { topics: topics, hints: hints, coverage: coverage };
+  }
+
+  function simChatGPT(c, ctx) {
+    var res = campaignShell(c);
+    var acc = ctx.acc;
+    var C = D.CHATGPT;
+    var ind = D.INDUSTRIES[acc.industry];
+    var loc = locationFactors(c, acc);
+    if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
+    var platforms = (c.platforms || []).map(function (id) { return C.platforms.find(function (p) { return p[0] === id; }); }).filter(Boolean);
+    if (!platforms.length) { res.errors.push('No platforms selected'); return res; }
+    var platShare = U.sum(platforms, function (p) { return p[2]; });
+    var desktopShare = U.sum(platforms.filter(function (p) { return p[0] === 'desktop_web'; }), function (p) { return p[2]; }) / platShare;
+    var sched = scheduleFactors(c, acc.industry);
+    var budget = c.budgetType === 'total' ? Number(c.totalBudget) || 0 : (Number(c.dailyBudget) || 0) * BUDGET_DAYS;
+    if (!(budget > 0)) { res.errors.push('Budget is 0'); return res; }
+    if (c.budgetType !== 'total' && c.dailyBudget < C.minDaily) res.warnings.push('Ads Manager requires a daily budget of at least $' + C.minDaily + ' (USD); yours is $' + c.dailyBudget);
+    var bench = chatBench(ind, ctx.market);
+    var objective = C.objectives[c.objective] ? c.objective : 'clicks';
+    res.objective = objective;
+    var tracking = !!acc.conversionTracking;
+    if (objective === 'conversions' && !tracking) res.warnings.push('Conversions campaigns need the measurement pixel or Conversions API; without them delivery could not optimize for conversions');
+    var cpmBilling = objective === 'views' || (objective === 'conversions' && c.convBilling === 'ocpm');
+    var hasOppref = /\{oppref\}/.test((c.adGroups || []).map(function (g) { return g.queryParams || ''; }).join(' '));
+    var matchRate = !tracking ? 0 : c.capi ? (hasOppref ? 1 : 0.95) : (hasOppref ? 0.88 : 0.8);
+    res.matchRate = matchRate;
+    res.clickWindow = Number(c.clickWindow) || 7;
+    res.viewWindow = Number(c.viewWindow) || 0;
+    res.capi = !!c.capi;
+    res.hasOppref = hasOppref;
+    res.source = c.source || 'manual';
+    var learn = objective === 'conversions' ? (tracking ? 0.9 + 0.15 * matchRate : 0.6) : 1;
+    // custom audiences from a customer list (matched users)
+    var matched = (Number(c.customerListSize) || 0) * 0.6;
+    var aud = { volume: 1, ctr: 1, cvr: 1 };
+    if (c.audienceInclude) {
+      if (matched < C.minAudience) res.warnings.push('The customer list matched about ' + Math.round(matched).toLocaleString() + ' people; including an audience needs at least 25,000 matched users, so it was ignored');
+      else aud = { volume: U.clamp(matched / 8e6, 0.002, 1), ctr: 1.8, cvr: 2.2 };
+    }
+    if (c.audienceExclude) aud.volume *= 0.95;
+    var restricted = C.restricted[acc.industry];
+    var restrictedFactor = restricted ? 0.75 : 1;
+    if (restricted) res.notes.push(restricted + ' is a restricted category: approved advertisers only, kept away from sensitive conversations');
+
+    var units = [];
+    var feedProducts = c.source === 'feed' ? (ctx.state.products || []).filter(function (p) { return M.feedQuality(p).approved; }) : null;
+    (c.adGroups || []).forEach(function (g) {
+      var gRes = Object.assign({ id: g.id, name: g.name, campaignId: c.id, campaign: c.name }, emptyMetrics());
+      res.adGroups.push(gRes);
+      var ads;
+      if (feedProducts) {
+        var pf = g.productFilter || { dimension: 'all' };
+        ads = feedProducts.filter(function (p) { return pf.dimension === 'all' || !pf.value || String(p[pf.dimension] || '').toLowerCase() === String(pf.value).toLowerCase(); }).map(function (p) {
+          var price = p.salePrice > 0 && p.salePrice < p.price ? p.salePrice : p.price;
+          return { title: M.fit(p.title, C.titleMax), body: '$' + Number(price).toFixed(2) + ' · ' + (acc.businessName || ''), image: p.imageUrl, url: M.absoluteUrl(acc.website, p.link || ''), product: p, orderValue: Math.max(price * 1.15, (acc.value || 0) * 0.85), feedScore: M.feedQuality(p).score };
+        });
+        if (!ads.length) { res.warnings.push('Ad group "' + g.name + '": no approved products match its product filter'); return; }
+      } else {
+        ads = (g.ads || []).filter(function (a) { return M.chatAdReview(a, ctx.state, g).status !== 'Rejected'; });
+        var rejected = (g.ads || []).length - ads.length;
+        if (rejected) res.warnings.push('Ad group "' + g.name + '": ' + rejected + ' ad(s) were rejected in review');
+        if (!ads.length) { res.warnings.push('Ad group "' + g.name + '" has no approved ad'); return; }
+      }
+      var tp = chatTopics(g, ctx);
+      var hintText = tp.hints.map(function (h) { return h.hint; }).join(' ');
+      var distinct = U.uniq(ads.map(function (a) { return (a.title + '|' + a.body).toLowerCase(); })).length;
+      // ads rotate: the system shifts delivery toward the stronger ads, and distinct angles help it find better matches
+      var scored = ads.map(function (a) {
+        var tl = (a.title || '').length, bl = (a.body || '').length;
+        var copyRel = M.relevance((a.title || '') + ' ' + (a.body || '') + ' ' + hintText, ctx.vocab);
+        var fitT = tl >= C.titleRec[0] && tl <= C.titleRec[1] ? 1 : 0.86;
+        var fitB = a.product ? 1 : bl >= C.bodyRec[0] && bl <= C.bodyRec[1] ? 1 : 0.9;
+        var copy = fitT * fitB * (a.image ? 1 : 0.82) * (0.6 + 0.4 * copyRel) * (a.product ? 0.6 + 0.6 * a.feedScore : 1);
+        var url = a.url || g.defaultUrl || acc.website;
+        return { ad: a, copy: copy, copyRel: copyRel, url: url, lp: landingPageQuality(url, hintText || acc.description, ctx) };
+      }).sort(function (x, y) { return y.copy - x.copy; });
+      var best = scored[0];
+      var angleBonus = distinct >= 2 ? 1.05 : 1;
+      gRes.adStrength = best.ad.title;
+      var base = 260000 * ind.volume * loc.weight * platShare * 0.5 * sched.volume * ctx.market.demand * restrictedFactor * aud.volume;
+      var rotating = scored.slice(0, 8);
+      var wsum = U.sum(rotating, function (a) { return Math.pow(a.copy, 3); }) || 1;
+      tp.topics.forEach(function (t) {
+        var I = CHAT_INTENT[t.intent];
+        rotating.forEach(function (a) {
+          var relScore = 0.35 + 0.65 * (0.5 * t.rel + 0.25 * a.copyRel + 0.25 * a.lp);
+          var ctr = C.ctr * (0.4 + 0.9 * t.rel) * a.copy * angleBonus * I.ctr * aud.ctr * (feedProducts ? 1.15 : 1) * (1 - 0.1 * desktopShare);
+          ctr = U.clamp(ctr, 0.0005, 0.05);
+          var cvr = bench.cvr * I.cvr * (0.15 + 0.85 * Math.pow(t.rel, 1.2)) * (0.55 + 0.9 * a.lp) * loc.cvr * sched.cvr * aud.cvr * (1 + 0.2 * desktopShare);
+          units.push({
+            g: g, gRes: gRes, t: t, ad: a, conv: base * t.share * Math.pow(a.copy, 3) / wsum, relScore: relScore, ctr: ctr, cvr: U.clamp(cvr, 0, 0.5),
+            value: a.ad.orderValue || acc.value, bench: bench.cpm * (t.intent === 'decision' ? 1.2 : 1)
+          });
+        });
+      });
+      // ads beyond the rotation still appear in the ad report
+      scored.slice(8).forEach(function (s2) { ctx.chatAds.push(Object.assign(emptyMetrics(), { campaignId: c.id, campaign: c.name, adGroup: g.name, title: s2.ad.title, status: 'Approved · rarely served', review: s2.ad.product ? 'Product' : M.chatAdReview(s2.ad, ctx.state, g).status })); });
+    });
+    if (!units.length) { res.errors.push('No ad group has an approved ad to show'); return res; }
+
+    var gManual = function (u) { return u.g.bidStrategy === 'manual_max_bid'; };
+    function bidCpm(u, scale) {
+      if (gManual(u)) {
+        var b = Number(u.g.maxBid) || 0;
+        return cpmBilling ? b : b * u.ctr * 1000;
+      }
+      var tilt = objective === 'conversions' ? Math.sqrt(u.cvr / bench.cvr) : objective === 'clicks' ? Math.sqrt(u.ctr / C.ctr) : 1;
+      return u.bench * 1.3 * scale * tilt;
+    }
+    function evaluate(scale) {
+      var rows = [], cost = 0;
+      units.forEach(function (u) {
+        var bid = bidCpm(u, scale);
+        var rank = bid * u.relScore, comp = u.bench * 0.65;
+        var win = rank < comp * 0.35 ? 0 : 0.9 * U.sigmoid(2.2 * (Math.log(rank / comp) + 0.2));
+        // second price: pay what it takes to beat the next ad, discounted by your relevance
+        var paid = Math.max(u.bench * 0.35, Math.min(bid, comp * (0.6 + 0.35 * win) / u.relScore));
+        var impr = u.t.sensitive ? 0 : u.conv * win;
+        cost += impr * paid / 1000;
+        rows.push({ u: u, impr: impr, cpm: paid });
+      });
+      return { rows: rows, cost: cost };
+    }
+    var anyAuto = units.some(function (u) { return !gManual(u); });
+    var ev = anyAuto ? fitBudget(evaluate, budget, 0.3, 4).ev : evaluate(1);
+    var throttle = ev.cost > budget ? budget / ev.cost : 1;
+    res.budgetLimited = throttle < 0.98;
+    var rnd = ctx.rnd;
+    var reported = 0, relW = 0;
+    var vw = Number(c.viewWindow) === 1;
+    var winF = C.windows[c.clickWindow] || C.windows[7];
+    ev.rows.forEach(function (row) {
+      var u = row.u;
+      var impr = stochRound(row.impr * throttle * (0.92 + 0.16 * rnd()), rnd);
+      var clicks = Math.min(impr, stochRound(impr * u.ctr, rnd));
+      var cost = cpmBilling ? impr * row.cpm / 1000 : clicks * Math.min(row.cpm / (1000 * u.ctr), gManual(u) ? Number(u.g.maxBid) || Infinity : Infinity);
+      var clickConv = stochRound(clicks * u.cvr * learn, rnd);
+      var vt = stochRound(impr * u.ctr * u.cvr * 0.15 * learn, rnd);
+      var conv = clickConv + vt;
+      var value = conv * u.value * (0.9 + 0.2 * rnd());
+      reported += (clickConv * winF + (vw ? vt : 0)) * matchRate;
+      var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv, value: value, viewThrough: vt, eligible: u.conv };
+      addMetrics(res, m);
+      addMetrics(u.gRes, m);
+      relW += impr * u.t.rel;
+      res.quality += clicks * u.t.rel;
+      res.lpW += clicks * u.ad.lp;
+      res.landing[u.ad.url] = (res.landing[u.ad.url] || 0) + clicks;
+      var tk = c.id + '|' + u.g.id + '|' + u.t.topic;
+      var tr = ctx.chatTopicMap.get(tk);
+      if (!tr) {
+        tr = Object.assign(emptyMetrics(), { campaignId: c.id, campaign: c.name, adGroupId: u.g.id, adGroup: u.g.name, topic: u.t.topic, hint: u.t.hint, intent: u.t.intent, relevance: u.t.rel,
+          status: u.t.sensitive ? 'Not eligible (sensitive)' : u.t.offTarget ? 'Off-target' : 'Matched' });
+        ctx.chatTopicMap.set(tk, tr);
+        ctx.chatTopics.push(tr);
+      }
+      addMetrics(tr, m);
+      var ak = c.id + '|' + u.g.id + '|' + u.ad.ad.title;
+      var ar = ctx.chatAdMap.get(ak);
+      if (!ar) {
+        ar = Object.assign(emptyMetrics(), { campaignId: c.id, campaign: c.name, adGroup: u.g.name, title: u.ad.ad.title, status: 'Serving', review: u.ad.ad.product ? 'Product' : M.chatAdReview(u.ad.ad, ctx.state, u.g).status });
+        ctx.chatAdMap.set(ak, ar);
+        ctx.chatAds.push(ar);
+      }
+      addMetrics(ar, m);
+    });
+    res.reportedConversions = Math.round(reported);
+    res.avgRelevance = U.safeDiv(relW, res.impressions);
+    res.impressionShare = U.safeDiv(res.impressions, res.eligible);
+    res.adGroups.forEach(derive);
+    res.deviceSplit = [{ device: 'mobile', share: 1 - desktopShare, cvr: 0.9, bid: 1 }, { device: 'desktop', share: desktopShare, cvr: 1.2, bid: 1 }, { device: 'tablet', share: 0, cvr: 1, bid: 1 }];
+    res.budget = budget;
+    res.bench = bench;
+    return res;
+  }
+
+  // ---------------------------------------------------------------------------
   // Round orchestration
   // ---------------------------------------------------------------------------
 
@@ -1229,7 +1470,7 @@
       brandLift: prev ? prev.brandLiftIndex || 0 : 0,
       remarketingUsers: prev && prev.analytics ? prev.analytics.users * 0.85 : 0,
       hasKeywords: state.campaigns.some(function (c) { return c.type === 'search' && (c.adGroups || []).some(function (g) { return M.adGroupKeywords(g).length; }); }) || !!(state.scan && (state.scan.keywords || []).length),
-      seenKeywords: new Set(), searchTerms: new Map(), videoSurfaces: new Map(), videoFormats: new Map(), keywords: [], audiences: [], placements: [], placementMap: new Map(), products: []
+      seenKeywords: new Set(), searchTerms: new Map(), videoSurfaces: new Map(), videoFormats: new Map(), chatTopics: [], chatTopicMap: new Map(), chatAds: [], chatAdMap: new Map(), keywords: [], audiences: [], placements: [], placementMap: new Map(), products: []
     };
   }
 
@@ -1260,7 +1501,8 @@
       search: { name: 'Paid Search', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.72 },
       shopping: { name: 'Paid Shopping', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.78 },
       display: { name: 'Display', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.8 },
-      video: { name: 'Paid Video', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.85 }
+      video: { name: 'Paid Video', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.85 },
+      chatgpt: { name: 'ChatGPT ads', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.8 }
     };
     var landing = {};
     var halo = 0;
@@ -1286,7 +1528,7 @@
       if (!ch.clicks) return;
       var q = U.safeDiv(ch.q, ch.clicks);
       var lp = U.safeDiv(ch.lp, ch.clicks);
-      var base = { search: 0.3, shopping: 0.28, display: 0.12, video: 0.18 }[k];
+      var base = { search: 0.3, shopping: 0.28, display: 0.12, video: 0.18, chatgpt: 0.34 }[k];
       var er = U.clamp(base + 0.4 * q + 0.15 * lp, 0.05, 0.9);
       rows.push({ channel: ch.name, sessions: Math.round(ch.sessions), engagementRate: er, conversions: ch.conv, value: ch.value, newUserShare: ch.newU, paid: true });
     });
@@ -1332,6 +1574,7 @@
       else if (c.type === 'display') r = simDisplay(c, ctx);
       else if (c.type === 'video') r = simVideo(c, ctx);
       else if (c.type === 'shopping') r = simShopping(c, ctx);
+      else if (c.type === 'chatgpt') r = simChatGPT(c, ctx);
       if (!r) return;
       r.status = r.errors.length ? 'Not running' : r.budgetLimited ? 'Limited by budget' : r.learning === 'learning' ? 'Learning' : 'Eligible';
       derive(r);
@@ -1395,6 +1638,8 @@
       products: ctx.products,
       videoSurfaces: Array.from(ctx.videoSurfaces.values()).map(function (v) { return derive(v); }),
       videoFormats: Array.from(ctx.videoFormats.values()).map(function (v) { return derive(v); }),
+      chatTopics: ctx.chatTopics.map(derive).sort(function (a, b) { return b.impressions - a.impressions; }),
+      chatAds: ctx.chatAds.map(derive),
       devices: devRows,
       daily: dailySeries(totals, ctx),
       analytics: ga,
@@ -1406,7 +1651,7 @@
   }
 
   AdSim.engine = {
-    simulateRound: simulateRound, keywordPlanner: keywordPlanner, landingPageQuality: landingPageQuality,
+    simulateRound: simulateRound, chatBench: chatBench, chatTopics: chatTopics, chatPrompt: chatPrompt, keywordPlanner: keywordPlanner, landingPageQuality: landingPageQuality,
     locationFactors: locationFactors, expandTerms: expandTerms, derive: derive, makeContext: makeContext,
     SMART: SMART
   };

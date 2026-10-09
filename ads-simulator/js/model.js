@@ -25,7 +25,8 @@
       scan: null,
       products: [],
       campaigns: [],
-      rounds: []
+      rounds: [],
+      decisions: {}
     };
   }
 
@@ -88,8 +89,20 @@
     } else if (type === 'video') {
       g.targeting = newTargeting();
       g.ads = [newVideoAd(state)];
+    } else if (type === 'chatgpt') {
+      g.bidStrategy = 'max_results';
+      g.maxBid = 4;
+      g.queryParams = '';
+      g.defaultUrl = state ? state.account.website : '';
+      g.hintsText = '';
+      g.productFilter = { dimension: 'all', value: '' };
+      g.ads = [newChatAd(state)];
     }
     return g;
+  }
+
+  function newChatAd(state) {
+    return { title: '', body: '', image: '', url: '' };
   }
 
   function newCampaign(type, state, goal) {
@@ -118,6 +131,23 @@
       c.inventory = 'standard';
       c.freqCap = 0;
       c.adGroups = [newAdGroup('video', state)];
+    } else if (type === 'chatgpt') {
+      c.objective = 'clicks';
+      c.convEvent = 'purchase';
+      c.convBilling = 'ocpc';
+      c.bidStrategy = 'max_results';
+      c.budgetType = 'daily';
+      c.totalBudget = 900;
+      c.locations = ['us'];
+      c.platforms = D.CHATGPT.platforms.map(function (p) { return p[0]; });
+      c.audienceInclude = false;
+      c.audienceExclude = false;
+      c.customerListSize = 0;
+      c.capi = false;
+      c.clickWindow = 7;
+      c.viewWindow = 1;
+      c.source = 'manual';
+      c.adGroups = [newAdGroup('chatgpt', state)];
     } else if (type === 'shopping') {
       c.priority = 'low';
       c.productGroups = [{ id: U.uid('pg'), dimension: 'all', value: '', bid: benchCpc(state, 'shopping'), excluded: false }];
@@ -550,6 +580,7 @@
     s.products = s.products || [];
     s.campaigns = s.campaigns || [];
     s.rounds = s.rounds || [];
+    s.decisions = s.decisions || {};
     if (typeof s.seed !== 'number') s.seed = base.seed;
     s.campaigns.forEach(function (c) {
       if (c.type === 'video') {
@@ -562,7 +593,46 @@
     return s;
   }
 
+  // ---------------------------------------------------------------------------
+  // ChatGPT ads helpers
+  // ---------------------------------------------------------------------------
+
+  function chatHints(g) {
+    return String(g.hintsText || '').split(/\n/).map(function (h) { return h.trim(); }).filter(Boolean).slice(0, D.CHATGPT.maxHints);
+  }
+
+  // How useful a context hint is: relevant to what you sell, and specific enough to describe a conversation.
+  function hintQuality(hint, vocab) {
+    var n = U.words(hint).length;
+    var spec = n <= 1 ? 0.3 : n <= 3 ? 0.65 : n <= 14 ? 1 : 0.8;
+    var rel = relevance(hint, vocab);
+    return { hint: hint, words: n, specificity: spec, relevance: rel, score: spec * (0.25 + 0.75 * rel), label: n <= 1 ? 'Too vague' : rel < 0.4 ? 'Off-topic' : n <= 3 ? 'Broad' : 'Specific' };
+  }
+
+  // Simulated ad review against ChatGPT ad policies
+  function chatAdReview(ad, state, g) {
+    var C = D.CHATGPT;
+    var reasons = [];
+    var title = (ad.title || '').trim(), body = (ad.body || '').trim();
+    if (title.length < 3 || title.length > C.titleMax) reasons.push('Title must be 3–' + C.titleMax + ' characters');
+    if (body.length > C.bodyMax) reasons.push('Body must be ' + C.bodyMax + ' characters or fewer');
+    if (!body) reasons.push('Add body copy');
+    if (!(ad.url || (g && g.defaultUrl) || state.account.website)) reasons.push('Add a destination URL');
+    var text = title + ' ' + body;
+    C.prohibited.forEach(function (r) { if (r[0].test(text) && reasons.indexOf(r[1]) < 0) reasons.push(r[1]); });
+    var caps = (text.match(/\b[A-Z]{4,}\b/g) || []).filter(function (w) { return ['HIIT', 'HVAC', 'SAAS'].indexOf(w) < 0; });
+    if (caps.length) reasons.push('Excessive capitalization ("' + caps[0] + '")');
+    var restricted = C.restricted[state.account.industry];
+    var status = reasons.length ? 'Rejected' : restricted ? 'Approved (restricted)' : 'Approved';
+    var tips = [];
+    if (title && (title.length < C.titleRec[0] || title.length > C.titleRec[1])) tips.push('Titles of ' + C.titleRec[0] + '–' + C.titleRec[1] + ' characters work best (yours: ' + title.length + ')');
+    if (body && (body.length < C.bodyRec[0] || body.length > C.bodyRec[1])) tips.push('Body copy of ' + C.bodyRec[0] + '–' + C.bodyRec[1] + ' characters works best (yours: ' + body.length + ')');
+    if (!ad.image) tips.push('Add a square image (cards with images stand out)');
+    return { status: status, reasons: reasons, tips: tips, restricted: restricted ? restricted + ' is a restricted category: approved advertisers only, and ads stay away from sensitive conversations' : '' };
+  }
+
   AdSim.model = {
+    newChatAd: newChatAd, chatHints: chatHints, hintQuality: hintQuality, chatAdReview: chatAdReview,
     newState: newState, newCampaign: newCampaign, newAdGroup: newAdGroup, newRSA: newRSA, newRDA: newRDA,
     newVideoAd: newVideoAd, newProduct: newProduct, newTargeting: newTargeting, businessVocab: businessVocab,
     relevance: relevance, intentOf: intentOf, policyIssues: policyIssues, rsaStrength: rsaStrength,

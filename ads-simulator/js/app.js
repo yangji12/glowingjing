@@ -341,7 +341,7 @@
 
   var NAV = [
     ['overview', '🏠', 'Overview'], ['setup', '🏢', 'Business & website'], ['campaigns', '📣', 'Campaigns'], ['feed', '🛍️', 'Product feed'],
-    ['previews', '👁️', 'Ad previews'], ['simulate', '▶️', 'Run simulation'], ['reports', '📊', 'Reports'], ['feedback', '🎯', 'Score & feedback'],
+    ['previews', '👁️', 'Ad previews'], ['simulate', '▶️', 'Run simulation'], ['reports', '📊', 'Reports'], ['channels', '🧭', 'Cross-channel results'], ['feedback', '🎯', 'Score & feedback'],
     ['guidelines', '📘', 'Guidelines'], ['settings', '⚙️', 'Settings']
   ];
 
@@ -366,7 +366,7 @@
     if (!r) {
       var steps = [
         ['1', 'Set up your business', 'Enter your business details (or pick a demo business), choose an industry, goal, and conversion value.', '#/setup', !needsBusiness()],
-        ['2', 'Build campaigns', 'Create Search, Display, YouTube or Shopping campaigns. Write ads, pick keywords/audiences, set budgets and bids.', '#/campaigns', S.campaigns.length > 0],
+        ['2', 'Build campaigns', 'Create Search, Display, YouTube, Shopping or ChatGPT ads campaigns. Write ads, pick keywords/audiences, set budgets and bids.', '#/campaigns', S.campaigns.length > 0],
         ['3', 'Preview your ads', 'See how your ads look on search results, websites, YouTube and Shopping.', '#/previews', false],
         ['4', 'Run a 30-day round', 'The simulator runs the auctions against competitors and reports clicks, impressions, CPC, conversions and website traffic.', '#/simulate', false],
         ['5', 'Read feedback, improve, repeat', 'Each round gives a setup score, a performance score, estimated revenue, and specific recommendations.', '#/feedback', false]
@@ -398,7 +398,7 @@
     var sc = r.score;
     var scoreCard = '<div class="card score-card"><div class="score-rings">' + ring(sc.overall, 'Overall · ' + sc.grade, 132) + ring(sc.setup, 'Setup', 104) + ring(sc.performance, 'Performance', 104) + '</div>' +
       '<p class="muted">Round ' + r.round + ' · ' + esc(new Date(r.createdAt).toLocaleString()) + '</p>' + (r.events.length ? '<ul class="events">' + r.events.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
-      '<div class="row wrap center"><a class="btn primary" href="#/feedback">See full feedback →</a>' + btn('⬇ Download PDF', 'downloadPdf') + '</div></div>';
+      '<div class="row wrap center"><a class="btn primary" href="#/feedback">See full feedback →</a><a class="btn" href="#/channels">Compare channels →</a>' + btn('⬇ Download PDF', 'downloadPdf') + '</div></div>';
     var daily = r.daily;
     var charts = '<div class="card"><div class="grid2">' +
       lineChart('ov-clicks', daily.map(function (d) { return { label: 'Day ' + d.day, y: d.clicks }; }), { title: 'Clicks per day', name: 'Clicks', color: '--series-1' }) +
@@ -473,7 +473,7 @@
           var fails = mine.filter(function (x) { return x.status === 'fail'; }).length, warns = mine.filter(function (x) { return x.status === 'warn'; }).length;
           return '<tr><td><a href="#/campaign/' + c.id + '/settings"><b>' + esc(c.name) + '</b></a></td><td>' + typeBadge(c.type) + '</td>' +
             '<td>' + btn(c.status === 'enabled' ? '● Enabled' : '❚❚ Paused', 'toggleCampaign', c.id, 'small ' + (c.status === 'enabled' ? 'on' : 'off')) + '</td>' +
-            '<td class="num">' + fMoney(c.dailyBudget) + '</td><td>' + esc((D.BID_STRATEGIES[c.bidStrategy] || {}).name || c.bidStrategy) + '</td>' +
+            '<td class="num">' + fMoney(c.dailyBudget) + '</td><td>' + esc(c.type === 'chatgpt' ? U.uniq((c.adGroups || []).map(function (g) { return (D.BID_STRATEGIES[g.bidStrategy] || {}).name || g.bidStrategy; })).join(', ') : (D.BID_STRATEGIES[c.bidStrategy] || {}).name || c.bidStrategy) + '</td>' +
             '<td class="num">' + (c.type === 'shopping' ? (c.productGroups || []).length + ' product group(s)' : (c.adGroups || []).length) + '</td>' +
             '<td>' + (c.status !== 'enabled' ? '<span class="muted">paused</span>' : fails ? '<span class="chip critical"><b>✕</b> ' + fails + ' to fix</span> ' : '') + (c.status === 'enabled' && warns ? '<span class="chip warning"><b>!</b> ' + warns + ' to improve</span>' : '') + (c.status === 'enabled' && !fails && !warns ? '<span class="chip good"><b>✓</b> All good</span>' : '') + '</td>' +
             '<td class="actions"><a class="btn small" href="#/campaign/' + c.id + '/settings">Edit</a>' + btn('Duplicate', 'dupCampaign', c.id, 'small ghost') + btn('Delete', 'deleteCampaign', c.id, 'small ghost danger') + '</td></tr>';
@@ -497,6 +497,10 @@
     return '<div class="card new-camp"><h3>New campaign</h3><p class="lbl">1 · What is this campaign\'s objective?</p><div class="picks">' + goals + '</div>' +
       '<p class="lbl">2 · Choose a campaign type ' + guideLink('ACC-3') + '</p><div class="picks types">' + types + '</div>' +
       (nc.type === 'video' ? '<p class="lbl">3 · Select a campaign subtype ' + guideLink('VID-4') + '</p>' + subtypePicker(nc.subtype || 'views', 'pickSubtype', nc.goal) : '') +
+      (nc.type === 'chatgpt' ? '<p class="lbl">3 · Objective ' + guideLink('CGPT-1') + '</p><div class="obj-picks">' + Object.keys(D.CHATGPT.objectives).map(function (k) {
+        var o = D.CHATGPT.objectives[k];
+        return '<button type="button" class="pick' + ((nc.objective || 'clicks') === k ? ' sel' : '') + '" data-action="pickChatObjective" data-args="' + esc(JSON.stringify(k)) + '"><b>' + esc(o.name) + '</b><small>' + esc(o.desc) + '</small></button>';
+      }).join('') + '</div><p class="help">You cannot change the objective after the campaign is created.</p>' : '') +
       (nc.type === 'shopping' && !S.products.length ? '<p class="warn-text">Shopping needs a product feed — add products in Product feed.</p>' : '') +
       '<div class="row">' + btn('Create campaign', 'createCampaign', null, 'primary' + (nc.type ? '' : ' disabled')) + btn('Cancel', 'cancelNew', null, 'ghost') + '</div></div>';
   }
@@ -532,13 +536,15 @@
     if (c.type === 'search') tabs.push(['adgroups', 'Ad groups & keywords'], ['ads', 'Ads'], ['assets', 'Assets']);
     if (c.type === 'display' || c.type === 'video') tabs.push(['targeting', 'Ad groups & targeting'], ['ads', 'Ads']);
     if (c.type === 'shopping') tabs.push(['products', 'Product groups & preview']);
-    tabs.push(['checks', 'Checklist']);
+    if (c.type === 'chatgpt') tabs = [['settings', '1 · Create campaign'], ['adgroups', '2 · Ad groups & ads'], ['review', '3 · Review']];
+    else tabs.push(['checks', 'Checklist']);
     var tab = UI.params[1] || 'settings';
     if (!tabs.some(function (t) { return t[0] === tab; })) tab = 'settings';
     var tabHtml = '<nav class="tabs">' + tabs.map(function (t) { return '<a href="#/campaign/' + c.id + '/' + t[0] + '" class="' + (tab === t[0] ? 'active' : '') + '">' + t[1] + '</a>'; }).join('') + '</nav>';
     var content = '';
-    if (tab === 'settings') content = campaignSettings(c, base);
-    if (tab === 'adgroups') content = searchAdGroups(c, base);
+    if (tab === 'settings') content = c.type === 'chatgpt' ? chatSettings(c, base) : campaignSettings(c, base);
+    if (tab === 'adgroups') content = c.type === 'chatgpt' ? chatAdGroups(c, base) : searchAdGroups(c, base);
+    if (tab === 'review') content = chatReview(c);
     if (tab === 'targeting') content = targetingEditor(c, base);
     if (tab === 'ads') content = c.type === 'search' ? searchAds(c, base) : c.type === 'display' ? displayAds(c, base) : videoAds(c, base);
     if (tab === 'assets') content = assetsEditor(c, base);
@@ -546,8 +552,158 @@
     if (tab === 'checks') content = '<div class="card">' + live('camp-checks-full', function () { return campaignChecks(c, true); }) + '</div>';
     var h = '<div class="page-head"><div><a href="#/campaigns" class="back">← Campaigns</a><h1>' + esc(c.name) + '</h1><p class="sub">' + typeBadge(c.type) + ' · ' + fMoney(c.dailyBudget) + '/day · ' + esc((D.BID_STRATEGIES[c.bidStrategy] || {}).name || '') + '</p></div>' +
       '<div class="page-actions">' + btn(c.status === 'enabled' ? '● Enabled' : '❚❚ Paused', 'toggleCampaign', c.id, c.status === 'enabled' ? 'on' : 'off') + '<a class="btn primary" href="#/simulate">Run simulation →</a></div></div>';
-    var side = tab === 'checks' ? '' : '<aside class="side-checks card"><h4>Checks for this campaign</h4>' + live('camp-checks', function () { return campaignChecks(c, false); }) + '</aside>';
+    var side = tab === 'checks' || tab === 'review' ? '' : '<aside class="side-checks card"><h4>Checks for this campaign</h4>' + live('camp-checks', function () { return campaignChecks(c, false); }) + '</aside>';
     return h + tabHtml + '<div class="editor' + (side ? '' : ' full') + '"><div class="editor-main">' + content + '</div>' + side + '</div>';
+  }
+
+  // ----- ChatGPT ads editor (mirrors Ads Manager: Create campaign → Ad groups & ads → Review) -----
+  function chatLocked(c) {
+    return S.rounds.some(function (r) { return (r.config || []).some(function (x) { return x.id === c.id; }); });
+  }
+
+  function chatSettings(c, base) {
+    var C = D.CHATGPT;
+    var locked = chatLocked(c);
+    var obj = C.objectives[c.objective] ? c.objective : 'clicks';
+    var h = '<div class="card"><h3>Campaign ' + guideLink('CGPT-1') + '</h3>' + field('Campaign name', input(base + '.name')) +
+      '<p class="lbl">Objective</p>' + (locked
+        ? '<p><b>' + esc(C.objectives[obj].name) + '</b> (' + esc(C.objectives[obj].billing) + ') · <span class="muted">Locked: the objective cannot be changed after the campaign has run. Create a new campaign to use a different objective.</span></p>'
+        : '<div class="obj-picks">' + Object.keys(C.objectives).map(function (k) {
+          return '<button type="button" class="pick' + (obj === k ? ' sel' : '') + '" data-action="setChatObjective" data-args="' + esc(JSON.stringify(k)) + '"><b>' + esc(C.objectives[k].name) + '</b><small>' + esc(C.objectives[k].desc) + '</small></button>';
+        }).join('') + '</div><p class="help">In Ads Manager you cannot change the objective after the campaign is created. Here it locks after the first round.</p>');
+    if (obj === 'conversions') {
+      h += '<div class="grid2">' + field('Conversion event', select(base + '.convEvent', C.events)) +
+        field('Billing', select(base + '.convBilling', [['ocpc', 'Pay per click (oCPC)'], ['ocpm', 'Pay per 1,000 impressions (oCPM)']])) + '</div>' +
+        (S.account.conversionTracking ? '' : '<p class="bad-text">Conversions campaigns need the measurement pixel: turn on conversion tracking in Business & website.</p>');
+    }
+    h += '<p class="lbl">Ads come from</p>' + radio(base + '.source', 'manual', 'Ads you write (title, body, image)') +
+      radio(base + '.source', 'feed', 'Product feed', 'Each approved product in your feed becomes a candidate ad, shown as a product carousel. Country-level location targeting only.') + '</div>';
+    h += '<div class="card"><h3>Budget ' + guideLink('CGPT-4') + '</h3>' + radio(base + '.budgetType', 'daily', 'Daily budget', 'An average over 7 days: a single day can spend up to 2× the daily budget, but never more than 7× in a week.') +
+      radio(base + '.budgetType', 'total', 'Campaign total budget', 'The total for the whole campaign (here: one 30-day round). The stricter control.') +
+      (c.budgetType === 'total' ? field('Campaign total ($)', input(base + '.totalBudget', { type: 'number', min: 0, step: 10 })) :
+        field('Daily budget ($)', input(base + '.dailyBudget', { type: 'number', min: 0, step: 1 }), 'Minimum $' + C.minDaily + '/day (USD). Typical ChatGPT CPC for your industry: ' + fMoney(E.chatBench(industry(), { competition: 1 }).cpc) + '.')) + '</div>';
+    var locs = D.LOCATIONS.filter(function (l) { return c.source !== 'feed' || l.kind === 'country'; }).map(function (l) { return arrayCheck(base + '.locations', l.id, esc(l.name)); }).join('');
+    h += '<div class="card"><h3>Targeting</h3><p class="lbl">Locations</p><div class="check-grid">' + locs + '</div>' +
+      '<p class="help">To target only one country, include it explicitly. ' + (c.source === 'feed' ? 'Product feed campaigns support country targeting only.' : 'Some regions also allow state, city or postal-code targeting (shown here as a radius).') + '</p>' +
+      '<p class="lbl">Platforms</p><div class="check-grid">' + C.platforms.map(function (p) { return arrayCheck(base + '.platforms', p[0], esc(p[1])); }).join('') + '</div>' +
+      '<p class="lbl">Custom audiences (customer list)</p>' + checkbox(base + '.audienceInclude', 'Include: show ads only to people on my customer list', 'Needs at least 25,000 matched users. Lists usually match 50–70% of rows.') +
+      checkbox(base + '.audienceExclude', 'Exclude: do not show ads to my existing customers') +
+      (c.audienceInclude || c.audienceExclude ? field('Customer list size (emails or phone numbers uploaded)', input(base + '.customerListSize', { type: 'number', min: 0, step: 1000 })) : '') +
+      '<p class="help">Ads show only to logged-in adults on Free and Go plans, never in Temporary Chats, and never near health, mental-health or political conversations. ' + guideLink('CGPT-6') + '</p></div>';
+    h += '<div class="card"><h3>Measurement ' + guideLink('CGPT-5') + '</h3>' +
+      '<p>Measurement pixel: ' + (S.account.conversionTracking ? '<span class="chip good"><b>✓</b> Installed</span>' : '<span class="chip critical"><b>✕</b> Not installed</span> <a href="#/setup">Turn on in Business & website</a>') + '</p>' +
+      checkbox(base + '.capi', 'Conversions API connected (server-side events)', 'Send events from your server with the same event ID as the pixel so they are deduplicated. Catches conversions the pixel misses.') +
+      '<div class="grid2">' + field('Click-through window', select(base + '.clickWindow', [[7, '7 days'], [14, '14 days'], [30, '30 days']], { type: 'number' })) +
+      field('View-through window', select(base + '.viewWindow', [[0, '0 days (off)'], [1, '1 day']], { type: 'number' })) + '</div>' +
+      '<p class="help">Windows change how many conversions are reported, not how many happen.</p></div>';
+    h += '<div class="row">' + '<a class="btn primary" href="#/campaign/' + c.id + '/adgroups">Next: Ad groups & ads →</a></div>';
+    return h;
+  }
+
+  function bidStrength(c, g) {
+    var cb = E.chatBench(industry(), { competition: 1 });
+    var cpmBill = c.objective === 'views' || (c.objective === 'conversions' && c.convBilling === 'ocpm');
+    var ref = cpmBill ? cb.cpm : cb.cpc;
+    var r = (Number(g.maxBid) || 0) / ref;
+    var label = r >= 1.15 ? 'Strong' : r >= 0.8 ? 'Competitive' : 'Weak';
+    var on = r >= 1.15 ? 4 : r >= 0.8 ? 3 : r >= 0.5 ? 2 : 1;
+    return '<div class="bid-strength strength s-' + (label === 'Strong' ? 'excellent' : label === 'Competitive' ? 'good' : 'poor') + '"><div class="strength-bar">' + [1, 2, 3, 4].map(function (i) { return '<span class="' + (on >= i ? 'on' : '') + '"></span>'; }).join('') + '</div><b>Bid strength: ' + label + '</b> <span class="muted">(typical ' + (cpmBill ? fMoney(cb.cpm) + ' CPM' : fMoney(cb.cpc) + ' CPC') + ')</span></div>';
+  }
+
+  function hintAnalysis(g) {
+    var vocab = M.businessVocab(S);
+    var hints = M.chatHints(g);
+    if (!hints.length) return '<p class="muted">No context hints yet. Without hints, ads are matched only from your landing page, title and copy (less reach, weaker matches).</p>';
+    var q = hints.map(function (hh) { return M.hintQuality(hh, vocab); });
+    var cls = { Specific: 'good', Broad: 'warning', 'Too vague': 'critical', 'Off-topic': 'critical' };
+    return '<p class="help">' + hints.length + ' / ' + D.CHATGPT.maxHints.toLocaleString() + ' hints · ' + q.filter(function (x) { return x.label === 'Specific'; }).length + ' specific</p>' +
+      '<table class="data compact hint-table"><thead><tr><th>Context hint</th><th>Quality</th><th class="num">Relevance</th><th>Example conversation it matches</th></tr></thead><tbody>' +
+      q.slice(0, 12).map(function (x) {
+        var intent = M.intentOf(x.hint, S);
+        return '<tr><td>' + esc(x.hint) + '</td><td><span class="chip ' + cls[x.label] + '">' + x.label + '</span></td><td class="num">' + Math.round(x.relevance * 100) + '%</td><td class="muted">"' + esc(E.chatPrompt(x.hint, intent === 'high' ? 'decision' : intent === 'low' ? 'info' : 'research')) + '"</td></tr>';
+      }).join('') + '</tbody></table>' + (hints.length > 12 ? '<p class="muted">… and ' + (hints.length - 12) + ' more.</p>' : '');
+  }
+
+  // What a ChatGPT mock-up needs: the ad (with its effective URL) or, for feed campaigns, the ad group's approved products
+  function chatOpts(c, g, ad) {
+    var feed = c.source === 'feed';
+    var products = feed ? S.products.filter(function (p) { var pf = g.productFilter || {}; return M.feedQuality(p).approved && (pf.dimension === 'all' || !pf.dimension || !pf.value || String(p[pf.dimension] || '').toLowerCase() === String(pf.value).toLowerCase()); }) : null;
+    var a = ad ? Object.assign({}, ad, { url: ad.url || g.defaultUrl || S.account.website }) : null;
+    return { ad: a, products: products, g: g, state: S };
+  }
+
+  function chatPreview(c, g, ad) {
+    return A.chatgpt.thumbnail(UI.device === 'mobile' ? 'mobile' : 'desktop', chatOpts(c, g, ad), 560);
+  }
+
+  function chatAdGroups(c, base) {
+    var C = D.CHATGPT;
+    var feed = c.source === 'feed';
+    var cpmBill = c.objective === 'views' || (c.objective === 'conversions' && c.convBilling === 'ocpm');
+    var cats = U.uniq(S.products.map(function (p) { return p.category; }).filter(Boolean));
+    var brands = U.uniq(S.products.map(function (p) { return p.brand; }).filter(Boolean));
+    var h = '<div class="card info-card">An ad group is a set of ads around one product, service, theme or need. Its <b>context hints</b> tell ChatGPT when your ads may be relevant; ads are matched using the conversation, your landing page, title, copy and hints, in a relevance-weighted second-price auction. ' + guideLink('CGPT-2') + '</div>';
+    (c.adGroups || []).forEach(function (g, gi) {
+      var gb = base + '.adGroups.' + gi;
+      h += '<div class="card"><div class="card-head"><h3>Ad group ' + (gi + 1) + '</h3>' + (c.adGroups.length > 1 ? btn('Remove', 'removeAdGroup', [c.id, g.id], 'small ghost danger') : '') + '</div>' +
+        field('Ad group name', input(gb + '.name')) +
+        '<p class="lbl">Bid strategy ' + guideLink('CGPT-4') + '</p>' + radio(gb + '.bidStrategy', 'max_results', 'Maximize results', "We'll automatically adjust your bid to get the most results from your budget.") +
+        radio(gb + '.bidStrategy', 'manual_max_bid', 'Manual: Max ' + (cpmBill ? 'CPM' : 'CPC')) +
+        (g.bidStrategy === 'manual_max_bid' ? field('Max bid ($ ' + (cpmBill ? 'per 1,000 impressions' : 'per click') + ')', input(gb + '.maxBid', { type: 'number', min: 0, step: 0.25 })) + live('bid-' + g.id, function () { return bidStrength(c, g); }) : '') +
+        field('Landing page query parameters', '<div class="row">' + input(gb + '.queryParams', { placeholder: 'campaign_id={campaign_id}&ad_id={ad_id}', cls: 'grow' }) + btn('Insert tracking template', 'chatTemplate', gb, 'small ghost') + '</div>',
+          'Optional. Appends missing query parameters. Supported template values: ' + C.templateValues.join(', ') + '. {oppref} is the click reference the Conversions API uses to match conversions.') +
+        field('Default ad destination URL', input(gb + '.defaultUrl', { inputType: 'url', placeholder: S.account.website }), 'Used for new ads in this ad group.') +
+        field('Context hints (optional) — one per line', textarea(gb + '.hintsText', { rows: 6, placeholder: 'choosing a beginner espresso machine under $300\nbest coffee subscription to give as a gift\nhow to make cafe-quality pour over at home' }),
+          'Describe the conversations, topics or needs where your product is relevant. These guide matching but are not exact-match targeting rules.') +
+        live('hints-' + g.id, function () { return hintAnalysis(g); });
+      if (feed) {
+        var pf = g.productFilter || (g.productFilter = { dimension: 'all', value: '' });
+        var values = pf.dimension === 'category' ? cats : pf.dimension === 'brand' ? brands : [];
+        h += '<p class="lbl">Products in this ad group</p><div class="grid2">' + field('Filter by', select(gb + '.productFilter.dimension', [['all', 'All products'], ['category', 'Category'], ['brand', 'Brand']])) +
+          (pf.dimension === 'all' ? '<div></div>' : field('Value', select(gb + '.productFilter.value', [['', '— choose —']].concat(values.map(function (v) { return [v, v]; }))))) + '</div>' +
+          '<p class="lbl">Preview</p>' + previewToolbar() + live('cprev-' + g.id, function () { return chatPreview(c, g, null); }) + '</div>';
+        return;
+      }
+      h += '</div>';
+      (g.ads || []).forEach(function (ad, ai) {
+        var ab = gb + '.ads.' + ai;
+        h += '<div class="card"><div class="card-head"><h3>' + esc(g.name) + ' · Ad ' + (ai + 1) + '</h3><div>' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + (g.ads.length > 1 ? btn('Remove ad', 'removeAd', [c.id, g.id, ai], 'small ghost danger') : '') + '</div></div><div class="ad-editor"><div>' +
+          field('Title', input(ab + '.title', { max: C.titleMax }), 'Recommended ' + C.titleRec[0] + '–' + C.titleRec[1] + ' characters. Say clearly what the product does. ' + guideLink('CGPT-3')) +
+          field('Body', input(ab + '.body', { max: C.bodyMax }), 'Recommended ' + C.bodyRec[0] + '–' + C.bodyRec[1] + ' characters. Each ad should take a different angle.') +
+          field('Image', imageField(ab + '.image', 'chat')) +
+          field('Destination URL', input(ab + '.url', { inputType: 'url', placeholder: g.defaultUrl || S.account.website })) +
+          '</div><div class="ad-side">' + live('crev-' + g.id + '-' + ai, function () {
+            var rv = M.chatAdReview(ad, S, g);
+            var chipCls = rv.status === 'Rejected' ? 'critical' : rv.status === 'Approved' ? 'good' : 'warning';
+            return '<p><span class="chip ' + chipCls + '"><b>' + (rv.status === 'Rejected' ? '✕' : '✓') + '</b> ' + esc(rv.status) + '</span> <span class="muted">(simulated review)</span></p>' +
+              (rv.reasons.length ? '<ul class="issues bad">' + rv.reasons.map(function (x) { return '<li>✕ ' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+              (rv.restricted ? '<p class="warn-text small">' + esc(rv.restricted) + '</p>' : '') +
+              (rv.tips.length ? '<ul class="issues">' + rv.tips.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '');
+          }) + '<p class="lbl">Preview</p>' + previewToolbar() + live('cprev-' + g.id + '-' + ai, function () { return chatPreview(c, g, ad); }) + '</div></div></div>';
+      });
+      h += btn('＋ New ad', 'addAd', [c.id, g.id], 'ghost');
+    });
+    h += '<div class="row">' + btn('＋ New ad group', 'addAdGroup', c.id, 'primary') + '<a class="btn" href="#/campaign/' + c.id + '/review">Next: Review →</a></div>';
+    return h;
+  }
+
+  function chatReview(c) {
+    var C = D.CHATGPT;
+    var obj = C.objectives[c.objective] || C.objectives.clicks;
+    var ads = 0, approved = 0, hints = 0;
+    (c.adGroups || []).forEach(function (g) { hints += M.chatHints(g).length; (g.ads || []).forEach(function (a) { ads++; if (M.chatAdReview(a, S, g).status !== 'Rejected') approved++; }); });
+    var row = function (k, v) { return '<dt>' + k + '</dt><dd>' + v + '</dd>'; };
+    return '<div class="card"><h3>Campaign summary</h3><dl class="review-list">' +
+      row('Objective', esc(obj.name) + ' · billed ' + esc(obj.billing) + (c.objective === 'conversions' ? ' (' + (c.convBilling === 'ocpm' ? 'oCPM' : 'oCPC') + ') · event: ' + esc((C.events.find(function (e) { return e[0] === c.convEvent; }) || [0, ''])[1]) : '')) +
+      row('Budget', c.budgetType === 'total' ? fMoney(c.totalBudget) + ' campaign total' : fMoney(c.dailyBudget) + ' per day (average over 7 days)') +
+      row('Locations', esc((c.locations || []).map(function (id) { return (D.LOCATIONS.find(function (l) { return l.id === id; }) || {}).name; }).join(', ') || 'none')) +
+      row('Platforms', esc((c.platforms || []).map(function (id) { return (C.platforms.find(function (p) { return p[0] === id; }) || [0, id])[1]; }).join(', ') || 'none')) +
+      row('Custom audiences', c.audienceInclude ? 'Include customer list' + (c.audienceExclude ? ' · exclude customers' : '') : c.audienceExclude ? 'Exclude existing customers' : 'None') +
+      row('Measurement', (S.account.conversionTracking ? 'Pixel' : 'No pixel') + (c.capi ? ' + Conversions API' : '') + ' · ' + c.clickWindow + '-day click / ' + c.viewWindow + '-day view') +
+      row('Ads from', c.source === 'feed' ? 'Product feed (' + S.products.filter(function (p) { return M.feedQuality(p).approved; }).length + ' approved products)' : approved + ' of ' + ads + ' ads approved') +
+      row('Ad groups', (c.adGroups || []).length + ' · ' + hints + ' context hints') + '</dl></div>' +
+      '<div class="card"><h3>Checks before launch</h3>' + live('camp-checks-full', function () { return campaignChecks(c, true); }) + '</div>' +
+      '<div class="row"><a class="btn primary" href="#/simulate">Publish & run simulation →</a></div>';
   }
 
   function campaignChecks(c, full) {
@@ -725,6 +881,7 @@
     logo: { w: 256, h: 256, label: 'Logo 1:1 (256×256)', png: true },
     product: { w: 600, h: 600, label: 'Product image 1:1 (600×600)' },
     thumb: { w: 1280, h: 720, label: 'Video thumbnail 16:9 (1280×720)' },
+    chat: { w: 1000, h: 1000, label: 'Square image 1:1 (1000×1000; ChatGPT allows up to 1200×1200)' },
     vthumb: { w: 720, h: 1280, label: 'Vertical thumbnail 9:16 (720×1280)' }
   };
 
@@ -938,7 +1095,7 @@
 
   // ----- Previews -----
   function viewPreviews() {
-    var h = header('Ad previews', 'How your ads could appear across Google Search, the Display Network, YouTube and Shopping. Use Stimulus view for a full-size mock-up you can save as an image.', previewToolbar());
+    var h = header('Ad previews', 'How your ads could appear across Google Search, the Display Network, YouTube, Shopping and ChatGPT. Use Stimulus view for a full-size mock-up you can save as an image.', previewToolbar());
     var any = false;
     S.campaigns.forEach(function (c) {
       var body = '';
@@ -954,12 +1111,159 @@
       } else if (c.type === 'video') {
         var ci = campIndex(c.id);
         (c.adGroups || []).forEach(function (g, gi) { (g.ads || []).forEach(function (ad, ai) { body += '<figure><figcaption>' + esc(g.name) + ' ' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + '</figcaption>' + videoContexts(c, ad, 'campaigns.' + ci + '.adGroups.' + gi + '.ads.' + ai) + '</figure>'; }); });
+      } else if (c.type === 'chatgpt') {
+        (c.adGroups || []).forEach(function (g) {
+          if (c.source === 'feed') { body += '<figure><figcaption>' + esc(g.name) + ' · product ads ' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, 0], 'small') + '</figcaption>' + chatPreview(c, g, null) + '</figure>'; return; }
+          (g.ads || []).forEach(function (ad, ai) { body += '<figure><figcaption>' + esc(g.name) + ' · ad ' + (ai + 1) + ' ' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + '</figcaption>' + chatPreview(c, g, ad) + '</figure>'; });
+        });
       } else if (c.type === 'shopping') {
         body += '<figure><figcaption>' + btn('🎯 Stimulus view', 'openStim', [c.id, null, 0], 'small') + '</figcaption>' + P.shoppingCarousel(S.products, S.account, (S.products[0] && S.products[0].category) || '') + '</figure>';
       }
       if (body) { any = true; h += '<div class="card"><h3>' + typeBadge(c.type) + ' ' + esc(c.name) + '</h3><div class="prev-list">' + body + '</div></div>'; }
     });
     if (!any) h += '<div class="card empty-state"><p>Create a campaign with ads to see previews.</p><a class="btn primary" href="#/campaigns">Go to campaigns</a></div>';
+    return h;
+  }
+
+  // ----- Cross-channel results -----
+  var XC_TABS = [['overview', 'Final overview'], ['compare', 'Channel comparison'], ['review', 'What worked & what next']];
+  var VERDICT_CLS = { good: 'good', ok: 'warning', bad: 'critical', off: '' };
+  var XC_HINT = {
+    search: 'e.g., Add 10 negatives from the search terms report; expect wasted spend under 10% next round.',
+    shopping: 'e.g., Rewrite the 5 weakest product titles; expect CTR to reach the benchmark.',
+    chatgpt: 'e.g., Replace one-word hints with specific needs; expect less off-target spend.',
+    display: 'e.g., Exclude app placements and add a remarketing ad group; expect a lower cost per conversion.',
+    video: 'e.g., Re-cut the first 5 seconds with the brand on screen; expect view rate above 30%.'
+  };
+  var DECISIONS = [['', '— choose —'], ['scale', 'Scale up (more budget)'], ['keep', 'Keep as is'], ['fix', 'Fix, then re-test'], ['cut', 'Cut back budget'], ['pause', 'Pause']];
+
+  function verdictChip(v) { return '<span class="chip ' + VERDICT_CLS[v.key] + '">' + esc(v.label) + '</span>'; }
+  // ratio vs benchmark as a colored cell; lowerIsBetter for costs
+  function vsBench(val, bench, f, lowerIsBetter) {
+    if (!bench || !val) return '<span class="muted">' + (val ? f(val) : '—') + '</span>';
+    var idx = val / bench;
+    var good = lowerIsBetter ? idx <= 0.9 : idx >= 1.1;
+    var bad = lowerIsBetter ? idx > 1.2 : idx < 0.8;
+    return '<span class="' + (good ? 'good-text' : bad ? 'bad-text' : '') + '">' + f(val) + '</span><small class="muted block">typ. ' + f(bench) + '</small>';
+  }
+
+  function viewChannels() {
+    var r = currentRound();
+    if (!r) return header('Cross-channel results') + '<div class="card empty-state"><p>Run a simulation round to compare your channels.</p><a class="btn primary" href="#/simulate">Run simulation</a></div>';
+    var tab = UI.params[0] || 'overview';
+    var X = A.channels.analyze(S, r, prevRoundOf(r));
+    var h = header('Cross-channel results', 'Round ' + r.round + ' · how every channel performed side by side, and what to do next', roundSelect() + btn('⬇ Download PDF', 'downloadPdf', null, 'primary'));
+    h += '<nav class="tabs">' + XC_TABS.map(function (t) { return '<a href="#/channels/' + t[0] + '" class="' + (tab === t[0] ? 'active' : '') + '">' + t[1] + '</a>'; }).join('') + '</nav>';
+    if (!X.channels.length) return h + '<div class="card empty-state"><p>No campaigns ran in this round.</p></div>';
+    if (tab === 'compare') return h + xcCompare(X, r);
+    if (tab === 'review') return h + xcReview(X, r);
+    return h + xcOverview(X, r);
+  }
+
+  function xcOverview(X, r) {
+    var t = X.totals, c = X.ctx;
+    var k = function (label, val, cls, sub) { return '<div class="kpi"><span>' + label + '</span><b class="' + (cls || '') + '">' + val + '</b>' + (sub ? '<small class="muted">' + sub + '</small>' : '') + '</div>'; };
+    var h = '<div class="kpis">' + k('Total spend', fMoney0(t.cost)) + k('Revenue (est.)', fMoney0(t.value)) +
+      k('Profit after ads (est.)', fMoney0(t.profit), t.profit >= 0 ? 'good-text' : 'bad-text') + k('ROAS', fX(t.roas), t.roas >= c.be ? 'good-text' : 'bad-text', 'break-even ' + fX(c.be)) +
+      k('Conversions', r.tracked ? fInt(t.conversions) : '—', '', r.tracked ? '' : 'not tracked') + k('Cost / conv.', r.tracked && t.conversions ? fMoney(t.cpa) : '—') + k('Channels used', String(X.channels.length)) + k('Overall score', r.score.overall + ' (' + r.score.grade + ')') + '</div>';
+    var counts = { good: 0, ok: 0, bad: 0, off: 0 };
+    X.campaigns.forEach(function (x) { counts[x.verdict.key]++; });
+    h += '<div class="card xc-summary"><h3>Summary</h3><div class="xc-sum-grid">' +
+      (X.best ? '<div class="xc-callout good"><span>Strongest channel</span><b>' + typeBadge(X.best.type) + '</b><p>' + esc(X.best.verdict.why) + '</p></div>' : '') +
+      (X.worst ? '<div class="xc-callout ' + (X.worst.verdict.key === 'bad' ? 'bad' : 'ok') + '"><span>Weakest channel</span><b>' + typeBadge(X.worst.type) + '</b><p>' + esc(X.worst.verdict.why) + '</p></div>' : '') +
+      '<div class="xc-callout"><span>Campaign verdicts</span><p><span class="chip good">' + counts.good + ' working</span> <span class="chip warning">' + counts.ok + ' borderline</span> <span class="chip critical">' + counts.bad + ' not working</span>' + (counts.off ? ' <span class="chip">' + counts.off + ' not running</span>' : '') + '</p></div>' +
+      '<div class="xc-callout"><span>Top next move</span><p>' + esc(X.plan[0] ? X.plan[0].text : 'Run another round.') + '</p><a href="#/channels/review">See the full plan →</a></div></div></div>';
+    h += '<div class="card"><h3>Campaign scorecard</h3><p class="help">Each campaign is judged on its job: Search, Shopping and ChatGPT ads on profit; Display and YouTube on profit and on the awareness they build. ' + (r.tracked ? '' : '<span class="warn-text">Conversion tracking was off, so verdicts use engagement only.</span>') + '</p>' +
+      dataTable('xc-camps', [
+        { key: 'name', label: 'Campaign', fmt: function (x) { return '<b>' + esc(x.name) + '</b>'; } },
+        { key: 'type', label: 'Channel', fmt: function (x) { return typeBadge(x.type); } },
+        { key: 'verdict', label: 'Verdict', sort: function (x) { return { good: 3, ok: 2, bad: 1, off: 0 }[x.verdict.key]; }, fmt: function (x) { return verdictChip(x.verdict) + '<small class="muted block">' + esc(x.verdict.why) + '</small>'; } },
+        { key: 'cost', label: 'Spend', num: true, fmt: function (x) { return fMoney0(x.cost); } },
+        { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+        { key: 'ctr', label: 'CTR', num: true, fmt: function (x) { return fPct(x.ctr); } },
+        { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions); } },
+        { key: 'cpa', label: 'Cost / conv.', num: true, fmt: function (x) { return r.tracked && x.conversions ? fMoney(x.cpa) : '—'; } },
+        { key: 'roas', label: 'ROAS', num: true, fmt: function (x) { return r.tracked ? fX(x.roas) : '—'; } },
+        { key: 'profit', label: 'Profit (est.)', num: true, fmt: function (x) { return '<span class="' + (x.profit >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(x.profit) + '</span>'; } }
+      ], X.campaigns, { totals: { name: '<b>Total</b>', cost: fMoney0(t.cost), clicks: fInt(t.clicks), conversions: convCell(r, t.conversions), cpa: r.tracked && t.conversions ? fMoney(t.cpa) : '—', roas: fX(t.roas), profit: fMoney0(t.profit) } }) + '</div>';
+    if (S.rounds.length > 1) {
+      var types = A.channels.ORDER.filter(function (ty) { return S.rounds.some(function (rr) { return rr.campaigns.some(function (cc) { return cc.type === ty; }); }); });
+      h += '<div class="card"><h3>Profit by channel across rounds</h3><p class="help">Did your changes help? Compare each channel round over round.</p><div class="table-wrap"><table class="data"><thead><tr><th>Round</th>' + types.map(function (ty) { return '<th class="num">' + esc(D.CAMPAIGN_TYPES[ty].name) + '</th>'; }).join('') + '<th class="num">Total</th></tr></thead><tbody>' +
+        S.rounds.map(function (rr) {
+          var mg = (rr.accountSnapshot || S.account).margin;
+          return '<tr' + (rr === r ? ' class="hl"' : '') + '><td>R' + rr.round + '</td>' + types.map(function (ty) {
+            var cs = rr.campaigns.filter(function (cc) { return cc.type === ty; });
+            if (!cs.length) return '<td class="num muted">—</td>';
+            var p = U.sum(cs, function (cc) { return cc.value * mg - cc.cost; });
+            return '<td class="num ' + (p >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(p) + '</td>';
+          }).join('') + '<td class="num"><b>' + fMoney0(rr.totals.value * mg - rr.totals.cost) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div></div>';
+    }
+    return h;
+  }
+
+  function xcCompare(X, r) {
+    var c = X.ctx;
+    var h = '<div class="card"><h3>Channel comparison</h3><p class="help">Green beats the typical benchmark for your industry on that channel; red is worse. Compare channels on the metric that matches their job, not only on ROAS.</p>' +
+      dataTable('xc-channels', [
+        { key: 'name', label: 'Channel', fmt: function (x) { return typeBadge(x.type) + '<small class="muted block">' + esc(x.role.stage) + ' · ' + x.campaignCount + ' campaign(s)</small>'; } },
+        { key: 'verdict', label: 'Verdict', sort: function (x) { return { good: 3, ok: 2, bad: 1, off: 0 }[x.verdict.key]; }, fmt: function (x) { return verdictChip(x.verdict); } },
+        { key: 'cost', label: 'Spend', num: true, fmt: function (x) { return fMoney0(x.cost) + '<small class="muted block">' + fPct(x.shareSpend, 0) + ' of total</small>'; } },
+        { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
+        { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+        { key: 'ctr', label: 'CTR', num: true, fmt: function (x) { return vsBench(x.ctr, x.bench.ctr, function (v) { return fPct(v); }); } },
+        { key: 'cpc', label: 'Avg. CPC', num: true, fmt: function (x) { return x.clicks ? vsBench(x.cpc, x.bench.cpc, fMoney, true) : '—'; } },
+        { key: 'cpm', label: 'Avg. CPM', num: true, fmt: function (x) { return fMoney(x.cpm); } },
+        { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions) + (r.tracked ? '<small class="muted block">' + fPct(x.shareConv, 0) + ' of total</small>' : ''); } },
+        { key: 'cpa', label: 'Cost / conv.', num: true, fmt: function (x) { return r.tracked && x.conversions ? vsBench(x.cpa, x.bench.cpa, fMoney, true) : '—'; } },
+        { key: 'value', label: 'Revenue', num: true, fmt: function (x) { return r.tracked ? fMoney0(x.value) : '—'; } },
+        { key: 'roas', label: 'ROAS', num: true, fmt: function (x) { return r.tracked ? '<span class="' + (x.roas >= c.be ? 'good-text' : 'bad-text') + '">' + fX(x.roas) + '</span>' : '—'; } },
+        { key: 'profit', label: 'Profit (est.)', num: true, fmt: function (x) { return '<span class="' + (x.profit >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(x.profit) + '</span>'; } }
+      ], X.channels) + '</div>';
+    var maxShare = Math.max.apply(null, X.channels.map(function (x) { return Math.max(x.shareSpend, r.tracked ? x.shareValue : x.shareClicks); }).concat([0.01]));
+    h += '<div class="grid2"><div class="card"><h3>Share of spend vs. share of ' + (r.tracked ? 'revenue' : 'clicks') + '</h3><p class="help">A channel whose ' + (r.tracked ? 'revenue' : 'click') + ' bar is longer than its spend bar pulls more than its weight.</p>' +
+      X.channels.map(function (x) {
+        var other = r.tracked ? x.shareValue : x.shareClicks;
+        return '<div class="xc-pair"><div class="xc-pair-label">' + esc(x.name) + '</div>' +
+          '<div class="xc-bar"><i class="spend" style="width:' + (x.shareSpend / maxShare * 100).toFixed(1) + '%"></i><span>' + fPct(x.shareSpend, 0) + ' spend</span></div>' +
+          '<div class="xc-bar"><i class="ret" style="width:' + (other / maxShare * 100).toFixed(1) + '%"></i><span>' + fPct(other, 0) + (r.tracked ? ' revenue' : ' clicks') + '</span></div></div>';
+      }).join('') + '<p class="xc-legend"><i class="spend"></i> Spend <i class="ret"></i> ' + (r.tracked ? 'Revenue' : 'Clicks') + '</p></div>';
+    if (r.tracked) {
+      var maxR = Math.max.apply(null, X.channels.map(function (x) { return x.roas; }).concat([c.be * 1.4]));
+      h += '<div class="card"><h3>ROAS by channel</h3><p class="help">The dashed line is break-even ROAS (' + fX(c.be) + ' = 1 ÷ ' + Math.round(c.margin * 100) + '% margin). Bars to the right of it earn a profit.</p><div class="xc-roas">' +
+        X.channels.map(function (x) {
+          return '<div class="xc-pair"><div class="xc-pair-label">' + esc(x.name) + '</div><div class="xc-bar"><i class="' + (x.roas >= c.be ? 'good' : x.role.judge === 'assist' ? 'ok' : 'bad') + '" style="width:' + (x.roas / maxR * 100).toFixed(1) + '%"></i><span>' + fX(x.roas) + '</span></div></div>';
+        }).join('') + '<div class="xc-be" style="left:calc(140px + (100% - 140px) * ' + (c.be / maxR).toFixed(4) + ')"></div></div></div>';
+    } else {
+      h += '<div class="card"><h3>ROAS by channel</h3><p class="warn-text">Conversion tracking was off, so ROAS cannot be compared. Turn it on in Business & website.</p></div>';
+    }
+    h += '</div>';
+    h += '<div class="card"><h3>What each channel is for</h3><div class="xc-roles">' + X.channels.map(function (x) {
+      return '<div class="xc-role">' + typeBadge(x.type) + '<b>' + esc(x.role.stage) + '</b><p>' + esc(x.role.job) + '</p><small class="muted">Judge it on: ' + (x.role.judge === 'intent' ? 'profit (ROAS vs. break-even) and cost per conversion' : 'reach, view rate and CPM first; direct ROAS second') + '</small></div>';
+    }).join('') + '</div></div>';
+    return h;
+  }
+
+  function xcReview(X, r) {
+    var key = 'r' + r.round;
+    S.decisions = S.decisions || {};
+    var dec = S.decisions[key] = S.decisions[key] || {};
+    var h = '<div class="card info-card">For each channel: read what worked and what did not, then record your decision for the next round. Your decisions are saved with your project and included in the PDF.</div>';
+    X.channels.forEach(function (x) {
+      dec[x.type] = dec[x.type] || { choice: '', notes: '' };
+      var base = 'decisions.' + key + '.' + x.type;
+      var d = x.diagnosis;
+      var trend = x.prev ? '<p class="muted small">Vs. last round: spend ' + fMoney0(x.prev.cost) + ' → ' + fMoney0(x.cost) + (r.tracked ? ', profit ' + fMoney0(x.prev.profit) + ' → <b class="' + (x.profit >= x.prev.profit ? 'good-text' : 'bad-text') + '">' + fMoney0(x.profit) + '</b>' : '') + '</p>' : '';
+      h += '<div class="card xc-channel"><div class="card-head"><h3>' + typeBadge(x.type) + ' ' + verdictChip(x.verdict) + '</h3><span class="muted">' + fMoney0(x.cost) + ' spend · ' + fPct(x.shareSpend, 0) + ' of budget</span></div>' +
+        '<p>' + esc(x.verdict.why) + '</p>' + trend +
+        '<div class="xc-cols"><div class="xc-col good"><h4>✓ What is working</h4>' + (d.good.length ? '<ul>' + d.good.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul>' : '<p class="muted">Nothing stands out yet.</p>') + '</div>' +
+        '<div class="xc-col bad"><h4>✕ What is not working</h4>' + (d.bad.length ? '<ul>' + d.bad.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul>' : '<p class="muted">No major problems found.</p>') + '</div>' +
+        '<div class="xc-col next"><h4>→ What to do next</h4><ul>' + d.next.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul></div></div>' +
+        '<div class="xc-decide">' + field('Your decision', select(base + '.choice', DECISIONS)) + field('Why? What will you change and how will you know it worked?', textarea(base + '.notes', { rows: 2, placeholder: XC_HINT[x.type] })) + '</div></div>';
+    });
+    h += '<div class="card"><h3>Budget plan for next round</h3><ol class="xc-plan">' + X.plan.map(function (p) { return '<li>' + esc(p.text) + '</li>'; }).join('') + '</ol>' +
+      '<p class="help">Change one or two things per round so you can tell what caused the difference. Smart Bidding needs a round to re-learn after big budget or strategy changes.</p></div>';
+    h += '<div class="card"><h3>Reflect</h3>' + field('Overall: what did you learn about how these channels work together?', textarea('decisions.' + key + '.reflection', { rows: 3, placeholder: 'e.g., YouTube did not pay back directly, but brand searches went up and Search CPA fell.' })) + '</div>';
     return h;
   }
 
@@ -994,7 +1298,7 @@
   }
 
   // ----- Reports -----
-  var REPORT_TABS = [['campaigns', 'Campaigns'], ['adgroups', 'Ad groups'], ['keywords', 'Keywords'], ['terms', 'Search terms'], ['audiences', 'Audiences & placements'], ['products', 'Products'], ['devices', 'Devices'], ['youtube', 'YouTube placements'], ['analytics', 'Website analytics'], ['daily', 'Daily']];
+  var REPORT_TABS = [['campaigns', 'Campaigns'], ['adgroups', 'Ad groups'], ['keywords', 'Keywords'], ['terms', 'Search terms'], ['audiences', 'Audiences & placements'], ['products', 'Products'], ['devices', 'Devices'], ['youtube', 'YouTube placements'], ['chatgpt', 'ChatGPT ads'], ['analytics', 'Website analytics'], ['daily', 'Daily']];
 
   function viewReports() {
     var r = currentRound();
@@ -1132,6 +1436,52 @@
         ], ga.channels) +
         '<h3 class="section">Top landing pages (paid traffic)</h3>' + dataTable('rep-lp', [{ key: 'url', label: 'Landing page', fmt: function (x) { return esc(x.url); } }, { key: 'sessions', label: 'Sessions', num: true, fmt: function (x) { return fInt(x.sessions); } }], ga.landingPages);
     }
+    if (tab === 'chatgpt') {
+      var cgs = r.campaigns.filter(function (x) { return x.type === 'chatgpt'; });
+      body = '<p class="help">ChatGPT ads show below an answer, labeled Sponsored, when the conversation matches your context hints, landing page and ad copy. Ads never change the answer, and conversations about health, mental health or politics are not eligible. ' + guideLink('CGPT-2') + '</p>' +
+        dataTable('rep-cg', [
+          { key: 'name', label: 'Campaign', fmt: function (x) { return '<b>' + esc(x.name) + '</b>' + (x.errors.length ? '<div class="bad-text small">' + esc(x.errors[0]) + '</div>' : ''); } },
+          { key: 'objective', label: 'Objective', fmt: function (x) { return esc(((D.CHATGPT.objectives[x.objective] || {}).name) || '—'); } },
+          { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
+          { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+          { key: 'ctr', label: 'CTR', num: true, title: 'Benchmark ~0.7%; top quartile ~1%', fmt: function (x) { return fPct(x.ctr); } },
+          { key: 'cpc', label: 'Avg. CPC', num: true, fmt: function (x) { return fMoney(x.cpc); } },
+          { key: 'cpm', label: 'Avg. CPM', num: true, sort: function (x) { return U.safeDiv(x.cost * 1000, x.impressions); }, fmt: function (x) { return fMoney(U.safeDiv(x.cost * 1000, x.impressions)); } },
+          { key: 'cost', label: 'Cost', num: true, fmt: function (x) { return fMoney(x.cost); } },
+          { key: 'avgRelevance', label: 'Avg. relevance', num: true, title: 'How closely the conversations matched your ads (drives the auction)', fmt: function (x) { return x.impressions ? Math.round((x.avgRelevance || 0) * 100) + '%' : '—'; } },
+          { key: 'conversions', label: 'Conv. (actual)', num: true, title: 'What really happened on your website (simulated)', fmt: function (x) { return convCell(r, x.conversions); } },
+          { key: 'reportedConversions', label: 'Conv. (reported)', num: true, title: 'What Ads Manager could attribute: pixel/CAPI match rate × attribution windows', fmt: function (x) { return r.tracked ? fInt(x.reportedConversions || 0) : '—'; } },
+          { key: 'matchRate', label: 'Match rate', num: true, fmt: function (x) { return r.tracked ? fPct(x.matchRate || 0, 0) : '—'; } },
+          { key: 'clickWindow', label: 'Attribution', fmt: function (x) { return (x.clickWindow || 7) + '-day click' + (x.viewWindow ? ', 1-day view' : ', no view'); } },
+          { key: 'value', label: 'Conv. value', num: true, fmt: function (x) { return r.tracked ? fMoney(x.value) : '—'; } },
+          { key: 'roas', label: 'ROAS', num: true, fmt: function (x) { return r.tracked ? fX(x.roas) : '—'; } }
+        ], cgs, { empty: 'No ChatGPT campaigns ran this round.' }) +
+        (cgs.length ? '<p class="help">Measurement: ' + cgs.map(function (x) { return '<b>' + esc(x.name) + '</b>: ' + (!r.tracked ? 'no pixel, so no conversions are reported' : (x.capi ? 'pixel + Conversions API' : 'pixel only') + (x.hasOppref ? ', {oppref} passed' : ', no {oppref} in landing page parameters')); }).join(' · ') + '. Attribution windows change what is reported, not what happens. ' + guideLink('CGPT-5') + '</p>' : '') +
+        '<h3 class="section">Conversations your ads matched</h3>' + dataTable('rep-cg-topics', [
+          { key: 'topic', label: 'Example conversation', fmt: function (x) { return esc(x.topic); } },
+          { key: 'hint', label: 'Context hint', fmt: function (x) { return esc(x.hint || ''); } },
+          { key: 'adGroup', label: 'Ad group' },
+          { key: 'intent', label: 'Intent', fmt: function (x) { return esc(x.intent); } },
+          { key: 'relevance', label: 'Relevance', num: true, fmt: function (x) { return Math.round(x.relevance * 100) + '%'; } },
+          { key: 'status', label: 'Status', fmt: function (x) { return '<span class="chip ' + (x.status === 'Matched' ? 'good' : x.status === 'Off-target' ? 'warning' : 'critical') + '">' + esc(x.status) + '</span>'; } },
+          { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
+          { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+          { key: 'ctr', label: 'CTR', num: true, fmt: function (x) { return fPct(x.ctr); } },
+          { key: 'cost', label: 'Cost', num: true, fmt: function (x) { return fMoney(x.cost); } },
+          { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions); } }
+        ], r.chatTopics || [], { empty: 'No ChatGPT campaigns ran this round.' }) +
+        '<h3 class="section">Ads</h3>' + dataTable('rep-cg-ads', [
+          { key: 'title', label: 'Ad title', fmt: function (x) { return '<b>' + esc(x.title || '(untitled)') + '</b>'; } },
+          { key: 'adGroup', label: 'Ad group' },
+          { key: 'review', label: 'Review', fmt: function (x) { return '<span class="chip ' + (/Rejected/.test(x.review) ? 'critical' : /restricted/.test(x.review) ? 'warning' : 'good') + '">' + esc(x.review) + '</span>'; } },
+          { key: 'status', label: 'Delivery', fmt: function (x) { return esc(x.status); } },
+          { key: 'impressions', label: 'Impr.', num: true, fmt: function (x) { return fInt(x.impressions); } },
+          { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+          { key: 'ctr', label: 'CTR', num: true, fmt: function (x) { return fPct(x.ctr); } },
+          { key: 'cost', label: 'Cost', num: true, fmt: function (x) { return fMoney(x.cost); } },
+          { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions); } }
+        ], r.chatAds || [], { empty: 'No ChatGPT ads served this round.' });
+    }
     if (tab === 'youtube') {
       var vs = r.videoSurfaces || [];
       body = '<p class="help">How each YouTube placement performed. Conversions include engaged-view conversions (people who watched and converted later). ' + guideLink('VID-6') + '</p>' +
@@ -1245,6 +1595,7 @@
       '<li><b>Display/Video reach</b> depends on audience size, demographics, and your bid vs. market CPM; frequency above ~10/month causes fatigue.</li>' +
       '<li><b>YouTube</b> results depend on the placement (in-stream, feeds, search, Shorts, TV screens, video partners), the format, the ABCD creative score, audience fit and inventory type. Conversions include engaged-view conversions.</li>' +
       '<li><b>Profit</b> = conversion value × margin − ad cost. Industry values are set so an average advertiser roughly breaks even; good setups earn a profit and poor ones lose money.</li>' +
+      '<li><b>ChatGPT ads</b> appear below an answer, labeled Sponsored, in conversations that match your context hints, landing page and ad copy (a relevance-weighted second-price auction). Specific hints reach better conversations; vague hints drift off-target. Reported conversions depend on the pixel, Conversions API, {oppref} and attribution windows.</li>' +
       '<li><b>Shopping</b> visibility depends on feed quality (titles, GTIN, images), price competitiveness and bids.</li>' +
       '<li>Each round has small random market changes (competition, seasonality). Results for the same setup in the same round are reproducible.</li></ul></div>';
   }
@@ -1256,7 +1607,7 @@
       '<div class="card"><h3>Save & share</h3><p>Your work is saved automatically in this browser. Export a file to submit it or move to another computer.</p><div class="row wrap">' +
       btn('⬇ Export project (.json)', 'exportJson', null, 'primary') + (S.rounds.length ? btn('⬇ Results overview (PDF)', 'downloadPdf') : '') + '<label class="btn">⬆ Import project<input type="file" accept="application/json,.json" data-action-change="importJson" hidden></label>' + (FRAMED ? '' : btn('🖨 Print latest report', 'print')) + '</div></div>' +
       '<div class="card"><h3>Reset</h3><p>Clear simulation rounds but keep your campaigns, or start over completely.</p><div class="row wrap">' + btn('Clear rounds', 'resetRounds', null, 'ghost danger') + btn('Start over', 'resetAll', null, 'danger') + '</div></div>' +
-      '<div class="card"><h3>About</h3><p>Digital Ad Lab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC; this project is not affiliated with Google.</p></div></div>';
+      '<div class="card"><h3>About</h3><p>Digital Ad Lab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC, and ChatGPT is a trademark of OpenAI; this project is not affiliated with either company.</p></div></div>';
   }
 
   // ---------------------------------------------------------------------------
@@ -1267,6 +1618,7 @@
     var out = [];
     S.campaigns.forEach(function (c) {
       if (c.type === 'shopping') { out.push({ c: c, g: null, ai: 0, label: c.name + ' · products' }); return; }
+      if (c.type === 'chatgpt' && c.source === 'feed') { (c.adGroups || []).forEach(function (g) { out.push({ c: c, g: g, ai: 0, label: c.name + ' · ' + g.name + ' · products' }); }); return; }
       (c.adGroups || []).forEach(function (g) { (g.ads || []).forEach(function (ad, ai) { out.push({ c: c, g: g, ai: ai, label: c.name + ' · ' + g.name + ' · ad ' + (ai + 1) }); }); });
     });
     return out;
@@ -1274,6 +1626,7 @@
 
   function stimContexts(c, ad) {
     if (c.type === 'video') return ad ? YT.contextsFor(adFormats(c, ad), c.videoSurfaces).map(function (id) { return [id, YT.CONTEXTS[id].label + ' · ' + D.VIDEO_FORMATS[YT.formatFor(id, adFormats(c, ad))].name]; }) : [];
+    if (c.type === 'chatgpt') return [['desktop', A.chatgpt.CONTEXTS.desktop.label], ['mobile', A.chatgpt.CONTEXTS.mobile.label]];
     if (c.type === 'search') return [['serp-desktop', 'Search results · desktop'], ['serp-mobile', 'Search results · mobile']];
     if (c.type === 'display') return [['site-desktop', 'News article · desktop'], ['site-mobile', 'News article · mobile']].concat(
       P.displayFormats({}, S.account, 0).map(function (f, i) { return ['fmt-' + i, f.label + ' (ad only)']; }));
@@ -1296,6 +1649,10 @@
       var path = 'campaigns.' + campIndex(c.id) + '.adGroups.' + c.adGroups.indexOf(g) + '.ads.' + st.ai;
       var cx = YT.CONTEXTS[ctx];
       return { w: cx.w, h: cx.h, html: YT.render(ctx, ad, acc, adFormats(c, ad), S, { skipState: st.skip, videoSrc: UI.videoFiles[path] }) };
+    }
+    if (c.type === 'chatgpt') {
+      var ccx = A.chatgpt.CONTEXTS[ctx];
+      return { w: ccx.w, h: ccx.h, html: A.chatgpt.render(ctx, chatOpts(c, g, ad)) };
     }
     var mobile = /mobile/.test(ctx);
     var W = mobile ? 390 : 1280, H = mobile ? 844 : 800;
@@ -1411,7 +1768,7 @@
 
   var VIEWS = {
     overview: viewOverview, setup: viewSetup, campaigns: viewCampaigns, campaign: viewCampaign, feed: viewFeed, previews: viewPreviews,
-    simulate: viewSimulate, reports: viewReports, feedback: viewFeedback, guidelines: viewGuidelines, settings: viewSettings
+    simulate: viewSimulate, reports: viewReports, channels: viewChannels, feedback: viewFeedback, guidelines: viewGuidelines, settings: viewSettings
   };
 
   function render(keepScroll) {
@@ -1514,6 +1871,14 @@
     pickGoal: function (el, g) { UI.newCamp.goal = g; render(true); },
     pickType: function (el, t) { UI.newCamp.type = t; render(true); },
     pickSubtype: function (el, k) { UI.newCamp.subtype = k; render(true); },
+    pickChatObjective: function (el, k) { UI.newCamp.objective = k; render(true); },
+    setChatObjective: function (el, k) { var c = campById(UI.params[0]); if (chatLocked(c)) return; c.objective = k; if (k === 'conversions' && !S.account.conversionTracking) toast('Conversions campaigns need the measurement pixel: turn on conversion tracking in Business & website.'); save(); render(true); },
+    chatTemplate: function (el, gb) {
+      var g = getPath(S, gb);
+      var t = 'utm_source=chatgpt&utm_medium=paid&campaign_id={campaign_id}&ad_group_id={ad_group_id}&ad_id={ad_id}&oppref={oppref}';
+      g.queryParams = g.queryParams ? g.queryParams.replace(/&$/, '') + '&' + t.split('&').filter(function (p) { return g.queryParams.indexOf(p.split('=')[0] + '=') < 0; }).join('&') : t;
+      save(); render(true);
+    },
     setSubtype: function (el, k) {
       var c = campById(UI.params[0]);
       c.videoSubtype = k;
@@ -1526,6 +1891,7 @@
       var nc = UI.newCamp;
       if (!nc || !nc.type) { toast('Choose a campaign type.'); return; }
       var c = M.newCampaign(nc.type, S, nc.goal);
+      if (nc.type === 'chatgpt') { c.objective = nc.objective || 'clicks'; c.name = 'ChatGPT campaign ' + (S.campaigns.filter(function (x) { return x.type === 'chatgpt'; }).length + 1); }
       if (nc.type === 'video') { c.videoSubtype = nc.subtype || 'views'; c.bidStrategy = D.VIDEO_SUBTYPES[c.videoSubtype].bids[0]; c.name = D.VIDEO_SUBTYPES[c.videoSubtype].name + ' campaign ' + (S.campaigns.filter(function (x) { return x.type === 'video'; }).length + 1); }
       S.campaigns.push(c);
       UI.newCamp = null;
@@ -1561,7 +1927,7 @@
     addAd: function (el, args) {
       var c = campById(args[0]);
       var g = c.adGroups.find(function (x) { return x.id === args[1]; });
-      g.ads.push(c.type === 'search' ? M.newRSA(S) : c.type === 'display' ? M.newRDA(S) : M.newVideoAd(S));
+      g.ads.push(c.type === 'search' ? M.newRSA(S) : c.type === 'display' ? M.newRDA(S) : c.type === 'chatgpt' ? M.newChatAd(S) : M.newVideoAd(S));
       save(); render(true);
     },
     removeAd: function (el, args) {
@@ -1653,7 +2019,7 @@
       save(); render(true); toast('Added "' + args[2] + '" as a phrase-match keyword to "' + g.name + '".');
     },
     downloadPdf: function () {
-      var r = UI.route === 'feedback' ? currentRound() : S.rounds[S.rounds.length - 1];
+      var r = UI.route === 'feedback' || UI.route === 'channels' ? currentRound() : S.rounds[S.rounds.length - 1];
       if (!r) { toast('Run a simulation round first.'); return; }
       if (!A.reportPdf || !A.reportPdf.available()) { toast('The PDF tool did not load. Check your internet connection and reload the page.'); return; }
       var doc, name = A.reportPdf.filename(S, r);
@@ -1666,7 +2032,7 @@
       var name = (S.student || 'student').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
       download('digital-ad-lab-' + name + '-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(S, null, 1), 'application/json');
     },
-    resetRounds: function (el) { if (armed(el, 'Click again to delete all rounds')) { S.rounds = []; UI.round = null; save(); render(); } },
+    resetRounds: function (el) { if (armed(el, 'Click again to delete all rounds')) { S.rounds = []; S.decisions = {}; UI.round = null; save(); render(); } },
     resetAll: function (el) { if (armed(el, 'Click again to erase everything')) { S = M.newState(); UI.round = null; save(); location.hash = '#/overview'; render(); } },
     print: function () {
       if (UI.route !== 'feedback') { location.hash = '#/feedback'; }

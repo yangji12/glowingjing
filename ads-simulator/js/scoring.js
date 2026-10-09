@@ -134,6 +134,12 @@
         var need = c.bidStrategy === 'target_cpa' ? Math.max(10 * cpc, 2 * (c.targetCpa || 0)) : 10 * cpc;
         bStatus = daily >= need ? 'pass' : daily >= need / 2 ? 'warn' : 'fail';
         bDetail = '$' + daily + '/day buys ~' + Math.floor(daily / cpc) + ' clicks at the industry CPC of $' + cpc.toFixed(2) + ' (recommended ≥ $' + need.toFixed(0) + '/day).';
+      } else if (c.type === 'chatgpt') {
+        var cb = E.chatBench(ind, { competition: 1 });
+        if (c.budgetType === 'total') daily = (Number(c.totalBudget) || 0) / 30.4;
+        bStatus = c.budgetType !== 'total' && daily < D.CHATGPT.minDaily ? 'fail' : daily >= 10 * cb.cpc ? 'pass' : 'warn';
+        bDetail = c.budgetType !== 'total' && daily < D.CHATGPT.minDaily ? 'Ads Manager requires at least $' + D.CHATGPT.minDaily + '/day (USD); yours is $' + daily + '.' :
+          '$' + daily.toFixed(0) + '/day buys ~' + Math.floor(daily / cb.cpc) + ' clicks at a typical ChatGPT CPC of $' + cb.cpc.toFixed(2) + ' (≥ $' + Math.ceil(10 * cb.cpc) + '/day recommended).';
       } else {
         bStatus = daily >= 15 ? 'pass' : daily >= 7 ? 'warn' : 'fail';
         bDetail = '$' + daily + '/day. ' + (c.type === 'video' ? 'Video' : 'Display') + ' campaigns need enough budget to reach a meaningful audience (≥ $15/day recommended).';
@@ -144,6 +150,7 @@
       if (c.type === 'display') displayChecks(c, ck, state);
       if (c.type === 'video') videoChecks(c, ck, state);
       if (c.type === 'shopping') shoppingChecks(c, ck, state);
+      if (c.type === 'chatgpt') chatChecks(c, ck, state, vocab);
     });
 
     var cats = CATS.map(function (name) {
@@ -325,6 +332,51 @@
     lpCheck(c, ck, state);
   }
 
+  function chatChecks(c, ck, state, vocab) {
+    var C = D.CHATGPT;
+    var acc = state.account;
+    var obj = C.objectives[c.objective] ? c.objective : 'clicks';
+    var goal = acc.goal;
+    var fit = obj === 'views' ? goal === 'awareness' : obj === 'clicks' ? (goal === 'traffic' || goal === 'consideration') : (goal === 'sales' || goal === 'leads');
+    ck({ id: 'cobj', cat: 'Strategy & structure', guide: 'CGPT-1', weight: 3, status: fit ? 'pass' : 'warn', title: 'Objective fits the goal', detail: C.objectives[obj].name + ' (' + C.objectives[obj].billing + ') for a ' + D.GOALS[goal].name + ' goal.', fix: 'Views for awareness, Clicks for traffic and consideration, Conversions for sales and leads (needs measurement). The objective cannot be changed later.' });
+    if (obj === 'conversions') ck({ id: 'cconvpixel', cat: 'Measurement', guide: 'CGPT-5', weight: 4, status: acc.conversionTracking ? 'pass' : 'fail', title: 'Conversions objective has measurement', detail: acc.conversionTracking ? 'The pixel is installed.' : 'Conversions campaigns optimize toward a measured event, but no pixel is installed.', fix: 'Turn on conversion tracking (the measurement pixel) in Business setup and add the Conversions API.' });
+    var hasOppref = (c.adGroups || []).some(function (g) { return /\{oppref\}/.test(g.queryParams || ''); });
+    ck({ id: 'cmeasure', cat: 'Measurement', guide: 'CGPT-5', weight: 3, status: acc.conversionTracking && c.capi && hasOppref ? 'pass' : acc.conversionTracking ? 'warn' : 'fail', title: 'Pixel, Conversions API and click reference',
+      detail: !acc.conversionTracking ? 'No pixel: conversions cannot be reported.' : (c.capi ? 'Conversions API connected. ' : 'Pixel only (no Conversions API): some conversions go unreported. ') + (hasOppref ? '{oppref} is passed on the landing page.' : 'Add {oppref} to the landing page query parameters so server events can be matched to clicks.'),
+      fix: 'Install the pixel, connect the Conversions API (same event IDs for deduplication), and add oppref={oppref} to the landing page query parameters.' });
+    if (c.audienceInclude) {
+      var matched = (Number(c.customerListSize) || 0) * 0.6;
+      ck({ id: 'caud', cat: 'Keywords & targeting', guide: 'CGPT-4', weight: 2, status: matched >= C.minAudience ? 'pass' : 'fail', title: 'Included audience is large enough', detail: 'About ' + Math.round(matched).toLocaleString() + ' matched users (about 60% of ' + (Number(c.customerListSize) || 0).toLocaleString() + ' uploaded). Including an audience needs at least 25,000 matched users.', fix: 'Upload a larger customer list, or use the list as an exclusion instead.' });
+    }
+    if (c.source === 'feed') {
+      var ok = (state.products || []).filter(function (p) { return M.feedQuality(p).approved; }).length;
+      ck({ id: 'cfeed', cat: 'Assets & feed', guide: 'SHP-2', weight: 4, status: ok ? 'pass' : 'fail', title: 'Product feed has approved products', detail: ok + ' approved product(s) available as ads.', fix: 'Add products with an image, price and availability in Product feed.' });
+    }
+    var groups = c.adGroups || [];
+    var allHints = [];
+    groups.forEach(function (g) { M.chatHints(g).forEach(function (h) { allHints.push(M.hintQuality(h, vocab)); }); });
+    var noHints = groups.filter(function (g) { return !M.chatHints(g).length; });
+    var vague = allHints.filter(function (h) { return h.label === 'Too vague' || h.label === 'Off-topic'; });
+    var specific = allHints.filter(function (h) { return h.label === 'Specific'; });
+    ck({ id: 'chints', cat: 'Keywords & targeting', guide: 'CGPT-2', weight: 5, status: noHints.length === groups.length ? 'fail' : noHints.length || vague.length > allHints.length / 3 || specific.length < 3 ? 'warn' : 'pass', title: 'Context hints are specific and relevant',
+      detail: allHints.length + ' hint(s): ' + specific.length + ' specific, ' + vague.length + ' too vague or off-topic' + (vague.length ? ' (e.g., "' + vague.slice(0, 2).map(function (h) { return h.hint; }).join('", "') + '")' : '') + '.' + (noHints.length ? ' Ad group(s) without hints: ' + noHints.map(function (g) { return '"' + g.name + '"'; }).join(', ') + '.' : ''),
+      fix: 'Describe real conversations, needs and audiences in 4–14 words ("choosing a beginner espresso machine under $300"), not single words. Use separate ad groups for different products or audiences.' });
+    if (c.source !== 'feed') {
+      var reviews = [], ads = [];
+      groups.forEach(function (g) { (g.ads || []).forEach(function (a) { ads.push(a); reviews.push(M.chatAdReview(a, state, g)); }); });
+      var rejected = reviews.filter(function (r) { return r.status === 'Rejected'; });
+      ck({ id: 'creview', cat: 'Ads & creative', guide: 'CGPT-6', weight: 5, status: !ads.length || rejected.length === ads.length ? 'fail' : rejected.length ? 'warn' : 'pass', title: 'Ads pass review', detail: rejected.length ? rejected.length + ' ad(s) would be rejected: ' + rejected[0].reasons.join('; ') + '.' : ads.length + ' ad(s) approved' + (C.restricted[acc.industry] ? ' (restricted category: approved advertisers only).' : '.'), fix: 'Keep titles to 3–50 characters and bodies under 100; avoid prohibited categories and claims like "guaranteed" or "cure".' });
+      var tipsAds = reviews.filter(function (r) { return r.tips.length; });
+      ck({ id: 'ccopy', cat: 'Ads & creative', guide: 'CGPT-3', weight: 3, status: !tipsAds.length ? 'pass' : tipsAds.length === reviews.length ? 'fail' : 'warn', title: 'Copy lengths and image follow recommendations', detail: tipsAds.length ? tipsAds[0].tips.join('; ') + '.' : 'Titles, bodies and images follow the recommendations.', fix: 'Titles 16–24 characters, body 32–48 characters, and a simple square image that matches the copy.' });
+      var thin = groups.filter(function (g) { var t = U.uniq((g.ads || []).map(function (a) { return (a.title + '|' + a.body).toLowerCase(); })); return t.length < 2; });
+      ck({ id: 'cangles', cat: 'Ads & creative', guide: 'CGPT-3', weight: 2, status: thin.length ? 'warn' : 'pass', title: 'Two or more ads with different angles', detail: thin.length ? thin.length + ' ad group(s) have only one distinct ad.' : 'Each ad group tests different angles.', fix: 'Add a second ad that leads with a different benefit, offer or audience.' });
+    }
+    var cb = E.chatBench(D.INDUSTRIES[acc.industry], { competition: 1 });
+    var cpmBill = c.objective === 'views' || (c.objective === 'conversions' && c.convBilling === 'ocpm');
+    var weak = groups.filter(function (g) { return g.bidStrategy === 'manual_max_bid' && (Number(g.maxBid) || 0) < (cpmBill ? cb.cpm * 0.8 : Math.max(3, cb.cpc * 0.7)); });
+    if (groups.some(function (g) { return g.bidStrategy === 'manual_max_bid'; })) ck({ id: 'cbid', cat: 'Bidding & budget', guide: 'CGPT-4', weight: 3, status: weak.length ? 'warn' : 'pass', title: 'Manual bids are competitive', detail: weak.length ? 'Bid strength is weak in ' + weak.map(function (g) { return '"' + g.name + '"'; }).join(', ') + ' (typical: $' + (cpmBill ? cb.cpm.toFixed(0) + ' CPM' : cb.cpc.toFixed(2) + ' CPC') + ').' : 'Manual bids are near the market rate.', fix: 'OpenAI suggests starting at $3–5 per click; raise the bid or switch to Maximize results.' });
+  }
+
   function lpCheck(c, ck, state) {
     var site = U.domainOf(state.account.website);
     var bad = [];
@@ -357,6 +409,7 @@
   // ---------------------------------------------------------------------------
 
   function benchFor(ind, type) {
+    if (type === 'chatgpt') return E.chatBench(ind, { competition: 1 });
     if (type === 'search') return ind.search;
     if (type === 'shopping') return ind.shopping;
     return ind.display;
@@ -538,6 +591,22 @@
       if (c.type !== 'video' || c.errors.length) return;
       if (c.format === 'skippable' && c.viewRate < 0.2) add({ severity: 'warning', area: c.name, title: 'Low view rate (' + pct(c.viewRate) + ')', detail: 'Most viewers skip before 30 seconds. Industry average ≈ ' + pct(ind.video.viewRate) + '.', action: 'Use the ABCD checklist: hook in the first 5 seconds, show and say the brand, show people and the product, end with a clear call to action. Keep it 15–60s.', guide: 'VID-5' });
       if (c.adRecallLift > 0) add({ severity: c.adRecallLift >= 8 ? 'success' : 'opportunity', area: c.name, title: 'Estimated ad recall lift: +' + c.adRecallLift.toFixed(1) + ' points', detail: 'Reach ' + (c.reach || 0).toLocaleString() + ' people, frequency ' + (c.frequency || 0).toFixed(1) + '. Video raises brand searches and direct traffic next round.', action: c.adRecallLift < 8 ? 'Show the brand early and use a hook to raise recall.' : 'Keep the creative; consider bumpers to reinforce the message.', guide: 'VID-1' });
+    });
+
+    // ChatGPT ads
+    result.campaigns.forEach(function (c) {
+      if (c.type !== 'chatgpt' || c.errors.length) return;
+      var topics = (result.chatTopics || []).filter(function (t) { return t.campaignId === c.id; });
+      var off = topics.filter(function (t) { return t.status === 'Off-target'; });
+      var offCost = U.sum(off, function (t) { return t.cost; });
+      if (offCost > c.cost * 0.08) add({ severity: 'warning', area: c.name, title: money(offCost) + ' spent in loosely related conversations', detail: 'Vague hints like ' + U.uniq(off.map(function (t) { return '"' + t.hint + '"'; })).slice(0, 3).join(', ') + ' matched conversations such as "' + off[0].topic + '" (CTR ' + pct(U.safeDiv(U.sum(off, function (t) { return t.clicks; }), U.sum(off, function (t) { return t.impressions; }))) + ').', action: 'Replace single-word hints with specific situations and needs (4–14 words).', guide: 'CGPT-2' });
+      var sens = topics.filter(function (t) { return t.status === 'Not eligible (sensitive)'; });
+      if (sens.length) add({ severity: 'info', area: c.name, title: 'Some relevant conversations were not eligible for ads', detail: 'ChatGPT does not show ads near sensitive conversations (e.g., "' + sens[0].topic + '"). This is policy, not a setup problem.', action: 'Focus hints on practical, non-sensitive needs (scheduling, pricing, choosing a provider).', guide: 'CGPT-6' });
+      if (c.impressions > 1000) {
+        if (c.ctr < D.CHATGPT.ctr * 0.75) add({ severity: 'warning', area: c.name, title: 'CTR ' + pct(c.ctr) + ' is below the ChatGPT ads average (~0.7%)', detail: 'Average relevance of matched conversations: ' + Math.round((c.avgRelevance || 0) * 100) + '%.', action: 'Make hints more specific, say clearly what the product does in a 16–24 character title, and add a square image.', guide: 'CGPT-3' });
+        else if (c.ctr >= 0.01) add({ severity: 'success', area: c.name, title: 'CTR ' + pct(c.ctr) + ' is top-quartile for ChatGPT ads (~1%+)', detail: 'Specific hints and clear copy are matching the right conversations.', action: 'Add more specific hints to grow reach, and test a second angle.', guide: 'CGPT-2' });
+      }
+      if (result.tracked && c.conversions > 0 && c.reportedConversions < c.conversions * 0.85) add({ severity: 'opportunity', area: c.name, title: 'Ads Manager reported ' + c.reportedConversions + ' of about ' + c.conversions + ' conversions your ads drove', detail: 'Match rate ' + Math.round((c.matchRate || 0) * 100) + '% with a ' + (D.CHATGPT.windows[c.clickWindow] ? c.clickWindow : 7) + '-day click window. Unreported conversions make the campaign look worse and give Maximize results less to learn from.', action: 'Connect the Conversions API, add oppref={oppref} to the landing page query parameters, and consider a longer click window.', guide: 'CGPT-5' });
     });
 
     // YouTube placements

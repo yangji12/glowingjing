@@ -124,15 +124,16 @@
     search:   { name: 'Search', icon: '🔍', desc: 'Text ads on search results when people search for your keywords. Best for capturing existing demand (sales, leads).' },
     display:  { name: 'Display', icon: '🖼️', desc: 'Responsive image ads across websites and apps. Best for awareness, consideration, and remarketing.' },
     video:    { name: 'Video (YouTube)', icon: '▶️', desc: 'Video ads on YouTube. Best for awareness and consideration; drives reach and brand lift.' },
+    chatgpt:  { name: 'ChatGPT ads', icon: '💬', desc: 'Sponsored cards shown below ChatGPT answers when the conversation is relevant. Matched by context hints, landing page and ad copy. Best for consideration and traffic.' },
     shopping: { name: 'Shopping', icon: '🛒', desc: 'Product listings with image, price, and store name built from your product feed. Best for online retail sales.' }
   };
 
   var GOALS = {
-    sales:     { name: 'Sales', fit: { search: 3, shopping: 3, display: 1, video: 1 } },
-    leads:     { name: 'Leads', fit: { search: 3, display: 1, video: 1, shopping: 0 } },
-    traffic:   { name: 'Website traffic', fit: { search: 3, display: 2, shopping: 2, video: 1 } },
-    awareness: { name: 'Brand awareness & reach', fit: { video: 3, display: 3, search: 1, shopping: 0 } },
-    consideration: { name: 'Product & brand consideration', fit: { video: 3, display: 2, search: 2, shopping: 1 } }
+    sales:     { name: 'Sales', fit: { search: 3, shopping: 3, display: 1, video: 1, chatgpt: 2 } },
+    leads:     { name: 'Leads', fit: { search: 3, display: 1, video: 1, shopping: 0, chatgpt: 2 } },
+    traffic:   { name: 'Website traffic', fit: { search: 3, display: 2, shopping: 2, video: 1, chatgpt: 3 } },
+    awareness: { name: 'Brand awareness & reach', fit: { video: 3, display: 3, search: 1, shopping: 0, chatgpt: 2 } },
+    consideration: { name: 'Product & brand consideration', fit: { video: 3, display: 2, search: 2, shopping: 1, chatgpt: 3 } }
   };
 
   var BID_STRATEGIES = {
@@ -147,6 +148,8 @@
     max_cpv:         { name: 'Maximum CPV', types: ['video'], needsConv: false, auto: false, desc: 'Pay per view (30s or full video, or interaction). For skippable in-stream and in-feed.' },
     target_cpv:      { name: 'Target CPV', types: ['video'], needsConv: false, auto: false, desc: 'Sets bids to get views at about the average cost per view you choose.' },
     max_engagements: { name: 'Maximize engagements', types: ['video'], needsConv: false, auto: true, desc: 'Automatically bids to get as many channel subscriptions, likes and shares as possible within budget.' },
+    max_results:     { name: 'Maximize results', types: ['chatgpt'], needsConv: false, auto: true, desc: 'Automatically sets and adjusts bids to get the most results (views, clicks or conversions) from your budget. No guaranteed CPA, CPC or ROAS.' },
+    manual_max_bid:  { name: 'Manual: Max bid', types: ['chatgpt'], needsConv: false, auto: false, desc: 'You set the most you will pay per click (Clicks, Conversions) or per 1,000 views (Views). Use it when you must stay under a cost limit.' },
     target_cpm:      { name: 'Target CPM', types: ['video'], needsConv: false, auto: false, desc: 'Pay per 1,000 impressions. For bumper, non-skippable and reach campaigns.' }
   };
 
@@ -180,6 +183,36 @@
       desc: 'Reach people while they are listening to music and podcasts on YouTube with audio ads (up to 30 seconds, shown with a still image). The voiceover carries the message.', m: { cost: 0.7, view: 1, evc: 0.4, recall: 0.9, spread: 1.2 } },
     engagement: { name: 'YouTube subscriptions and engagements', group: 'Subscriptions & engagements', formats: { skippable: 0.5, infeed: 0.25, shorts: 0.25 }, bids: ['max_engagements'], goals: ['consideration', 'awareness'], isNew: true,
       desc: 'Get subscriptions and engagement on your YouTube channel (subscribes, likes, shares) with video ads designed to encourage valuable interactions.', m: { cost: 1, view: 1.05, evc: 0.35, recall: 1, spread: 1 } }
+  };
+
+  // ChatGPT ads (OpenAI Ads Manager, beta), as documented in OpenAI's help center in 2026.
+  // Benchmarks come from early third-party reports (CTR ~0.7%, CPM $25–60, CPC $3–5 e-commerce, $8–18 software/finance).
+  var CHATGPT = {
+    objectives: {
+      views: { name: 'Views', billing: 'CPM', desc: 'Get your ad seen in relevant conversations. You pay per 1,000 impressions (CPM).' },
+      clicks: { name: 'Clicks', billing: 'CPC', desc: 'Get people to visit your site. You pay per click (CPC).' },
+      conversions: { name: 'Conversions', billing: 'oCPC', desc: 'Get purchases, leads or sign-ups. Optimizes toward a conversion event you measure with the pixel or Conversions API. Pay per click (oCPC) or per 1,000 impressions (oCPM).' }
+    },
+    events: [['purchase', 'Purchase'], ['lead', 'Lead / form submit'], ['signup', 'Sign-up'], ['add_to_cart', 'Add to cart']],
+    platforms: [['ios_app', 'iOS app', 0.35], ['android_app', 'Android app', 0.25], ['ios_web', 'iOS web', 0.08], ['android_web', 'Android web', 0.07], ['desktop_web', 'Desktop web', 0.25]],
+    minDaily: 25,
+    minAudience: 25000,
+    titleMax: 50, titleRec: [16, 24], bodyMax: 100, bodyRec: [32, 48], maxHints: 2000,
+    ctr: 0.007, cpm: 35,
+    templateValues: ['{campaign_id}', '{ad_group_id}', '{ad_id}', '{ad_account_id}', '{oppref}'],
+    // ad review (simplified from OpenAI's ad policies)
+    prohibited: [
+      [/\b(casino|betting|sportsbook|poker|lottery|slots)\b/i, 'Gambling is not allowed'],
+      [/\b(beer|wine|vodka|whiskey|liquor|cocktails?|vape|vaping|e-?cig\w*|tobacco|cigars?|nicotine)\b/i, 'Alcohol, tobacco and vaping are not allowed'],
+      [/\b(dating|hookups?|singles near)\b/i, 'Dating is not allowed'],
+      [/\b(vote|election|candidate|ballot|campaign donation)\b/i, 'Political ads are not allowed in ChatGPT'],
+      [/\b(guaranteed|guarantee|miracle|cures?|risk[- ]free|get rich|overnight results|lose \d+ ?(lbs|pounds|kg))\b/i, 'Misleading or unsupported claim']
+    ],
+    // regulated categories: allowed only for approved advertisers, and kept away from sensitive conversations
+    restricted: { health: 'Health', finance: 'Financial services', legal: 'Legal services' },
+    // share of a category's relevant conversations that are sensitive (personal/mental health, etc.) and never show ads
+    sensitiveShare: { health: 0.4, finance: 0.15, legal: 0.15 },
+    windows: { 7: 0.88, 14: 0.95, 30: 1 }
   };
 
   // Where YouTube ads can appear. share = part of a segment's video inventory on that surface;
@@ -279,7 +312,13 @@
     { id: 'SHP-4', cat: 'Shopping', title: 'Segment product groups and bid by value', text: 'Split "All products" by category or brand so you can bid more on high-margin, high-converting products and less (or exclude) on the rest. Add negative keywords to Shopping campaigns too.' },
     { id: 'SHP-5', cat: 'Shopping', title: 'Price competitively and show sales', text: 'Shoppers compare prices side-by-side. Products priced above the market get fewer clicks; sale prices show a strike-through that lifts CTR.' },
     { id: 'LP-1', cat: 'Landing page', title: 'Send clicks to a fast, relevant, secure landing page', text: 'Use HTTPS, a mobile-friendly design, and a page that matches the ad and keyword. Deep-link to the specific product or service page rather than the homepage.' },
-    { id: 'LP-2', cat: 'Landing page', title: 'Final URLs must match your website', text: 'The final URL domain must match the domain shown in the ad. Mismatched domains are disapproved.' }
+    { id: 'LP-2', cat: 'Landing page', title: 'Final URLs must match your website', text: 'The final URL domain must match the domain shown in the ad. Mismatched domains are disapproved.' },
+    { id: 'CGPT-1', cat: 'ChatGPT ads', title: 'Choose the objective first: you cannot change it later', text: 'Views (pay per 1,000 impressions) builds awareness, Clicks (pay per click) drives traffic, and Conversions optimizes toward a measured event such as a purchase or lead. In Ads Manager the objective cannot be changed after the campaign is created; make a new campaign instead.' },
+    { id: 'CGPT-2', cat: 'ChatGPT ads', title: 'Write specific context hints', text: 'Context hints describe the conversations, problems and needs where your product helps. They are broad signals, not exact-match keywords, and do not guarantee delivery. Specific phrases ("cushioned running shoes for a first 5K") beat single words ("shoes"). Build one ad group per product, theme or audience, and add up to 2,000 hints each.' },
+    { id: 'CGPT-3', cat: 'ChatGPT ads', title: 'Keep ad copy short, clear and honest', text: 'Titles: 3–50 characters (16–24 recommended) that say what the product does. Body: up to 100 characters (32–48 recommended). Use a simple square image (PNG/JPG, up to 1200×1200) that matches the copy. Give each ad a different angle rather than repeating the same message.' },
+    { id: 'CGPT-4', cat: 'ChatGPT ads', title: 'Bid and budget for learning', text: 'Maximize results is the default and adjusts bids for you, with no guaranteed CPA or ROAS. Use Manual: Max bid when you must stay under a limit; OpenAI suggests starting at $3–5 per click and shows bid strength. The minimum daily budget is $25 (USD); daily budgets average over 7 days and can spend up to 2× on a single day.' },
+    { id: 'CGPT-5', cat: 'ChatGPT ads', title: 'Measure conversions with the pixel and Conversions API', text: 'Install the measurement pixel, send server events through the Conversions API (same event ID so they are deduplicated), and keep the oppref click reference (add {oppref} to landing page query parameters). Attribution windows (7/14/30-day click, 0 or 1-day view) change how many conversions are reported, not how many happen.' },
+    { id: 'CGPT-6', cat: 'ChatGPT ads', title: 'Follow ChatGPT ad policies', text: 'Ads appear only for logged-in adults on Free and Go plans, below the answer, clearly labeled Sponsored; they never change the answer. They do not appear near health, mental-health or political conversations or in Temporary Chats. Alcohol, gambling, dating and political ads are not allowed; health, financial and crypto advertisers need approval; misleading claims are rejected.' },
   ];
 
   var GUIDE_INDEX = {};
@@ -374,7 +413,7 @@
     INDUSTRIES: INDUSTRIES, AGE_BANDS: AGE_BANDS, AGE_SHARE: AGE_SHARE, GENDERS: GENDERS,
     LOCATIONS: LOCATIONS, AUDIENCES: AUDIENCES, AUDIENCE_TYPES: AUDIENCE_TYPES, TOPICS: TOPICS,
     CAMPAIGN_TYPES: CAMPAIGN_TYPES, GOALS: GOALS, BID_STRATEGIES: BID_STRATEGIES,
-    VIDEO_FORMATS: VIDEO_FORMATS, VIDEO_SUBTYPES: VIDEO_SUBTYPES, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
+    VIDEO_FORMATS: VIDEO_FORMATS, VIDEO_SUBTYPES: VIDEO_SUBTYPES, CHATGPT: CHATGPT, YT_SURFACES: YT_SURFACES, INVENTORY_TYPES: INVENTORY_TYPES, ABCD: ABCD, MODIFIERS: MODIFIERS, HIGH_INTENT_WORDS: HIGH_INTENT_WORDS,
     LOW_INTENT_WORDS: LOW_INTENT_WORDS, CTA_WORDS: CTA_WORDS, GUIDELINES: GUIDELINES,
     GUIDE_INDEX: GUIDE_INDEX, TEMPLATES: TEMPLATES
   };

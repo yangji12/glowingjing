@@ -75,3 +75,27 @@ function untargetedDisplay(s) {
 const AUD = { coffee: ['im_coffee', 'aff_foodies'], law: ['im_legal'], gym: ['im_fitness'], saas: ['im_software'] };
 
 module.exports = { A, base, decentSearch, quickStart, decentDisplay, decentVideo, shopping, nonsenseSearch, untargetedDisplay, AUD };
+
+// A reasonable ChatGPT ads campaign: specific context hints, clear copy, image, pixel on.
+const CHAT_HINTS = {
+  coffee: ['choosing fresh whole bean coffee for a home espresso machine', 'best specialty coffee subscription for gifts', 'single origin coffee beans with fruity notes', 'how to brew better pour over coffee at home', 'buying freshly roasted coffee online'],
+  law: ['what to do after a car accident in Denver', 'finding a personal injury lawyer near me', 'how much is my car accident claim worth', 'truck accident attorney free consultation', 'slip and fall injury compensation'],
+  gym: ['finding a gym with HIIT classes in Austin', 'personal trainer for beginners nearby', 'boutique fitness studio membership prices', 'strength training classes for women', 'yoga and HIIT studio first class free'],
+  saas: ['project management software for small agencies', 'best tool to track team tasks and time', 'alternatives to spreadsheets for client projects', 'workflow automation for small teams', 'kanban board app with client portal']
+};
+function decentChat(s, tpl, opts = {}) {
+  const c = M.newCampaign('chatgpt', s);
+  Object.assign(c, { objective: opts.objective || 'clicks', capi: !!opts.capi });
+  if (s.account.serviceArea === 'local') c.locations = ['r25'];
+  const g = c.adGroups[0];
+  g.hintsText = (opts.hints || CHAT_HINTS[tpl]).join('\n');
+  if (opts.oppref) g.queryParams = 'utm_source=chatgpt&oppref={oppref}';
+  g.ads = [
+    { title: M.fit(s.account.businessName, 24), body: M.fit(s.account.description, 48), image: 'generated', url: '' },
+    { title: 'Try ' + M.fit(s.account.businessName, 18), body: 'Rated 4.9 by local customers. Start today.', image: 'generated', url: '' }
+  ];
+  s.campaigns.push(c);
+  return c;
+}
+module.exports.decentChat = decentChat;
+module.exports.CHAT_HINTS = CHAT_HINTS;
