@@ -43,9 +43,6 @@ for (const tpl of TPLS) {
   });
 }
 
-test('coffee demo shopping feed is profitable', () => {
-  assert.ok(run('coffee', X.shopping).score.profit > 0);
-});
 
 test('display with automated bidding never stalls at zero (auction price floors)', () => {
   for (const tpl of TPLS) assert.ok(run(tpl, X.untargetedDisplay).totals.clicks > 0, tpl);

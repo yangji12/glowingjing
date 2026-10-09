@@ -609,6 +609,8 @@
     s.campaigns = s.campaigns || [];
     s.rounds = s.rounds || [];
     s.decisions = s.decisions || {};
+    // Google Shopping was removed from the simulator
+    s.campaigns = s.campaigns.filter(function (c) { return c.type !== 'shopping'; });
     if (typeof s.seed !== 'number') s.seed = base.seed;
     s.campaigns.forEach(function (c) {
       if (c.type === 'video') {

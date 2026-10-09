@@ -121,16 +121,26 @@ test('video format length rules are enforced', () => {
   assert.ok(!M.videoAdCheck(ad, 'nonskip').valid);
 });
 
-test('shopping feed: missing image disapproves, good titles score higher', () => {
+test('product feed: missing image disapproves, and ChatGPT product ads use approved products only', () => {
   const s = M.applyTemplate(M.newState(), D.TEMPLATES[0]);
   const [good, weak, , noImage] = s.products;
   assert.ok(!M.feedQuality(noImage).approved);
   assert.ok(M.feedQuality(good).score > M.feedQuality(weak).score);
   s.account.conversionTracking = true;
-  s.campaigns.push(M.newCampaign('shopping', s));
+  const c = M.newCampaign('chatgpt', s);
+  c.source = 'feed';
+  c.adGroups[0].hintsText = 'choosing fresh whole bean coffee for a home espresso machine\nbest specialty coffee subscription for gifts';
+  s.campaigns.push(c);
   const r = E.simulateRound(s);
   assert.notStrictEqual(r.campaigns[0].status, 'Not running');
-  assert.ok(r.products.find((p) => p.productId === noImage.id).impressions === 0);
+  assert.ok(!r.chatAds.some((a) => a.title === noImage.title && a.impressions > 0));
+});
+
+test('Google Shopping is not offered and old Shopping campaigns are removed on load', () => {
+  assert.ok(D.PLATFORMS.indexOf('shopping') < 0);
+  const s = M.newState();
+  s.campaigns.push(M.newCampaign('shopping', s), M.newCampaign('search', s));
+  assert.deepStrictEqual(M.migrate(JSON.parse(JSON.stringify(s))).campaigns.map((c) => c.type), ['search']);
 });
 
 test('display untargeted vs in-market: targeting lifts conversion rate', () => {

@@ -52,7 +52,6 @@ function decentVideo(s, aud) {
   return c;
 }
 
-function shopping(s) { const c = M.newCampaign('shopping', s); s.campaigns.push(c); return c; }
 
 // Nonsense: keywords unrelated to the business and a nearly empty ad.
 function nonsenseSearch(s) {
@@ -74,7 +73,7 @@ function untargetedDisplay(s) {
 
 const AUD = { coffee: ['im_coffee', 'aff_foodies'], law: ['im_legal'], gym: ['im_fitness'], saas: ['im_software'] };
 
-module.exports = { A, base, decentSearch, quickStart, decentDisplay, decentVideo, shopping, nonsenseSearch, untargetedDisplay, AUD };
+module.exports = { A, base, decentSearch, quickStart, decentDisplay, decentVideo, nonsenseSearch, untargetedDisplay, AUD };
 
 // A reasonable ChatGPT ads campaign: specific context hints, clear copy, image, pixel on.
 const CHAT_HINTS = {

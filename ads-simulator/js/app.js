@@ -358,7 +358,7 @@
   var NAV = [
     ['overview', '🏠', 'Overview'], ['setup', '🏢', 'Business & website'], ['feed', '🛍️', 'Product feed'],
     ['#', 'Build by platform'],
-    ['platform/search', '🔍', 'Google Search'], ['platform/display', '🖼️', 'Google Display'], ['platform/video', '▶️', 'YouTube'], ['platform/chatgpt', '💬', 'ChatGPT ads'], ['platform/shopping', '🛒', 'Google Shopping'],
+    ['platform/search', '🔍', 'Google Search'], ['platform/display', '🖼️', 'Google Display'], ['platform/video', '▶️', 'YouTube'], ['platform/chatgpt', '💬', 'ChatGPT ads'],
     ['campaigns', '📋', 'All campaigns'], ['previews', '👁️', 'Ad previews'],
     ['#', 'Simulate & review'],
     ['simulate', '🚀', 'Run simulation'], ['reports', '📊', 'Reports'], ['channels', '🧭', 'Cross-channel results'], ['feedback', '🎯', 'Score & feedback'],
@@ -395,8 +395,8 @@
     if (!r) {
       var steps = [
         ['1', 'Set up your business', 'Enter your business details (or pick a demo business), choose an industry, goal, and conversion value.', '#/setup', !needsBusiness()],
-        ['2', 'Pick a platform and build', 'Open Google Search, Google Display, YouTube, ChatGPT ads or Google Shopping in the menu and create a campaign there.', '#/platform/search', S.campaigns.length > 0],
-        ['3', 'Preview your ads', 'See how your ads look on search results, websites, YouTube and Shopping.', '#/previews', false],
+        ['2', 'Pick a platform and build', 'Open Google Search, Google Display, YouTube or ChatGPT ads in the menu and create a campaign there.', '#/platform/search', S.campaigns.length > 0],
+        ['3', 'Preview your ads', 'See how your ads look on search results, websites, YouTube and in ChatGPT answers.', '#/previews', false],
         ['4', 'Run a 30-day round', 'Run one platform on its own, or all platforms together. The simulator reports clicks, impressions, CPC, conversions and website traffic.', '#/simulate', false],
         ['5', 'Read feedback, improve, repeat', 'Each round gives a setup score, a performance score, estimated revenue, and specific recommendations.', '#/feedback', false]
       ];
@@ -496,7 +496,7 @@
         '<p class="help">Builds a draft from your ' + (demo ? 'demo business' : 'description and industry') + ' with Google-style defaults (broad match, network expansion on, few assets). It will run, but not well. Your job is to improve it using the feedback.</p></div>';
     }
     var bench = '<div class="card"><h3>Market benchmarks: ' + esc(ind.name) + '</h3><p class="muted">Approximate industry averages used by the simulator.</p><div class="table-wrap"><table class="data compact"><thead><tr><th></th><th class="num">CTR</th><th class="num">Avg. CPC</th><th class="num">Conv. rate</th><th class="num">Cost / conv.</th></tr></thead><tbody>' +
-      [['Search', ind.search], ['Display', E.displayBench(ind)], ['Shopping', ind.shopping]].map(function (x) {
+      [['Search', ind.search], ['Display', E.displayBench(ind)]].map(function (x) {
         return '<tr><td>' + x[0] + '</td><td class="num">' + fPct(x[1].ctr) + '</td><td class="num">' + fMoney(x[1].cpc) + '</td><td class="num">' + fPct(x[1].cvr) + '</td><td class="num">' + fMoney(x[1].cpc / x[1].cvr) + '</td></tr>';
       }).join('') + (function () { var cb = E.chatBench(ind, { competition: 1 }); return '<tr><td>ChatGPT ads</td><td class="num">' + fPct(cb.ctr) + '</td><td class="num">' + fMoney(cb.cpc) + '</td><td class="num">' + fPct(cb.cvr) + '</td><td class="num">' + fMoney(cb.cpc / cb.cvr) + '</td></tr>'; })() +
       '<tr><td>YouTube</td><td colspan="4" class="wrap">CPV ≈ ' + fMoney(ind.video.cpv) + ', view rate ≈ ' + fPct(ind.video.viewRate, 0) + '</td></tr></tbody></table></div></div>';
@@ -528,7 +528,7 @@
   }
 
   function viewPlatform() {
-    var t = D.CAMPAIGN_TYPES[UI.params[0]] ? UI.params[0] : 'search';
+    var t = D.PLATFORMS.indexOf(UI.params[0]) >= 0 ? UI.params[0] : 'search';
     var ct = D.CAMPAIGN_TYPES[t];
     var camps = S.campaigns.filter(function (c) { return c.type === t; });
     var enabled = camps.filter(function (c) { return c.status === 'enabled'; });
@@ -613,7 +613,7 @@
       return '<button type="button" class="pick' + (nc.goal === g ? ' sel' : '') + '" data-action="pickGoal" data-args="' + esc(JSON.stringify(g)) + '"><b>' + esc(D.GOALS[g].name) + '</b></button>';
     }).join('');
     var goal = D.GOALS[nc.goal];
-    var types = Object.keys(D.CAMPAIGN_TYPES).map(function (t) {
+    var types = D.PLATFORMS.map(function (t) {
       var ct = D.CAMPAIGN_TYPES[t];
       var fit = goal ? goal.fit[t] : 0;
       var fitLabel = fit >= 3 ? '<span class="chip good"><b>✓</b> Recommended</span>' : fit === 2 ? '<span class="chip info"><b>~</b> Works</span>' : '<span class="chip neutral">Less suited</span>';
@@ -1206,16 +1206,16 @@
 
   // ----- Product feed -----
   function viewFeed() {
-    var h = header('Product feed', 'Your product data (like Google Merchant Center). Shopping ads are built entirely from it.', btn('＋ Add product', 'addProduct', null, 'primary'));
+    var h = header('Product feed', 'Your product data. ChatGPT ads can build product ads (a product carousel) from it: choose "Product feed" as the ad source in a ChatGPT ads campaign.', btn('＋ Add product', 'addProduct', null, 'primary'));
     h += '<div class="card info-card">Title formula: <b>Brand + Product type + Key attributes</b> (size, color, material, model). 70–150 characters; the first ~70 are visible. Include GTIN, a good image, accurate price and availability. ' + guideLink('SHP-1') + ' ' + guideLink('SHP-2') + '</div>';
     if (!S.products.length) h += '<div class="card empty-state"><p>No products yet. Add products manually or paste CSV below.</p></div>';
     var noImg = S.products.filter(function (p) { return !p.imageUrl; }).length;
-    if (noImg) h += '<div class="card warn-card"><p><b>' + noImg + ' product(s) have no image</b> and are disapproved: Shopping and product ads need an image.</p>' + btn('Use generated artwork for all ' + noImg, 'genAllProductImages', null, 'primary small') + ' <span class="muted">or upload a photo on each product.</span></div>';
+    if (noImg) h += '<div class="card warn-card"><p><b>' + noImg + ' product(s) have no image</b> and are disapproved: product ads need an image.</p>' + btn('Use generated artwork for all ' + noImg, 'genAllProductImages', null, 'primary small') + ' <span class="muted">or upload a photo on each product.</span></div>';
     S.products.forEach(function (p, i) {
       var pb = 'products.' + i;
       h += '<div class="card product"><div class="card-head"><h3>Product ' + (i + 1) + '</h3>' + btn('Remove', 'removeProduct', p.id, 'small ghost danger') + '</div><div class="ad-editor"><div>' +
         field('Title', input(pb + '.title', { max: 150 })) +
-        '<div class="grid3">' + field('Price ($)', input(pb + '.price', { type: 'number', step: 0.01, min: 0 })) + field('Sale price ($, optional)', input(pb + '.salePrice', { type: 'number', step: 0.01, min: 0 })) + field('Typical market price ($, optional)', input(pb + '.marketPrice', { type: 'number', step: 0.01, min: 0 }), 'What similar products usually cost at other stores. Shopping compares your price with it. Leave 0 if you do not know.') + '</div>' +
+        '<div class="grid3">' + field('Price ($)', input(pb + '.price', { type: 'number', step: 0.01, min: 0 })) + field('Sale price ($, optional)', input(pb + '.salePrice', { type: 'number', step: 0.01, min: 0 })) + field('Typical market price ($, optional)', input(pb + '.marketPrice', { type: 'number', step: 0.01, min: 0 }), 'What similar products usually cost at other stores. Used to judge how competitive your price is. Leave 0 if you do not know.') + '</div>' +
         '<div class="grid3">' + field('Brand', input(pb + '.brand')) + field('GTIN (barcode)', input(pb + '.gtin', { placeholder: '12–14 digits' })) + field('Category / product type', input(pb + '.category')) + '</div>' +
         '<div class="grid2">' + field('Product image', imageField(pb + '.imageUrl', 'product')) + field('Product page link', input(pb + '.link', { placeholder: '/products/…' })) + '</div>' +
         field('Availability', select(pb + '.availability', [['in_stock', 'In stock'], ['out_of_stock', 'Out of stock'], ['preorder', 'Preorder']])) +
@@ -1234,7 +1234,7 @@
 
   // ----- Previews -----
   function viewPreviews() {
-    var h = header('Ad previews', 'How your ads could appear across Google Search, the Display Network, YouTube, Shopping and ChatGPT. Use Stimulus view for a full-size mock-up you can save as an image.', previewToolbar());
+    var h = header('Ad previews', 'How your ads could appear across Google Search, the Display Network, YouTube and ChatGPT. Use Stimulus view for a full-size mock-up you can save as an image.', previewToolbar());
     var any = false;
     S.campaigns.forEach(function (c) {
       var body = '';
@@ -1313,7 +1313,7 @@
       (X.worst ? '<div class="xc-callout ' + (X.worst.verdict.key === 'bad' ? 'bad' : 'ok') + '"><span>Weakest channel</span><b>' + typeBadge(X.worst.type) + '</b><p>' + esc(X.worst.verdict.why) + '</p></div>' : '') +
       '<div class="xc-callout"><span>Campaign verdicts</span><p><span class="chip good">' + counts.good + ' working</span> <span class="chip warning">' + counts.ok + ' borderline</span> <span class="chip critical">' + counts.bad + ' not working</span>' + (counts.off ? ' <span class="chip">' + counts.off + ' not running</span>' : '') + '</p></div>' +
       '<div class="xc-callout"><span>Top next move</span><p>' + esc(X.plan[0] ? X.plan[0].text : 'Run another round.') + '</p><a href="#/channels/review">See the full plan →</a></div></div></div>';
-    h += '<div class="card"><h3>Campaign scorecard</h3><p class="help">Each campaign is judged on its job: Search, Shopping and ChatGPT ads on profit; Display and YouTube on profit and on the awareness they build. ' + (r.tracked ? '' : '<span class="warn-text">Conversion tracking was off, so verdicts use engagement only.</span>') + '</p>' +
+    h += '<div class="card"><h3>Campaign scorecard</h3><p class="help">Each campaign is judged on its job: Search and ChatGPT ads on profit; Display and YouTube on profit and on the awareness they build. ' + (r.tracked ? '' : '<span class="warn-text">Conversion tracking was off, so verdicts use engagement only.</span>') + '</p>' +
       dataTable('xc-camps', [
         { key: 'name', label: 'Campaign', fmt: function (x) { return '<b>' + esc(x.name) + '</b>'; } },
         { key: 'type', label: 'Channel', fmt: function (x) { return typeBadge(x.type); } },
@@ -1447,7 +1447,7 @@
   }
 
   // ----- Reports -----
-  var REPORT_TABS = [['campaigns', 'Campaigns'], ['adgroups', 'Ad groups'], ['keywords', 'Keywords'], ['terms', 'Search terms'], ['audiences', 'Audiences & placements'], ['products', 'Products'], ['devices', 'Devices'], ['youtube', 'YouTube placements'], ['chatgpt', 'ChatGPT ads'], ['analytics', 'Website analytics'], ['daily', 'Daily']];
+  var REPORT_TABS = [['campaigns', 'Campaigns'], ['adgroups', 'Ad groups'], ['keywords', 'Keywords'], ['terms', 'Search terms'], ['audiences', 'Audiences & placements'], ['devices', 'Devices'], ['youtube', 'YouTube placements'], ['chatgpt', 'ChatGPT ads'], ['analytics', 'Website analytics'], ['daily', 'Daily']];
 
   function viewReports() {
     var r = currentRound();
@@ -1548,7 +1548,7 @@
             var already = U.parseKeywordList(c.negativesText).some(function (n) { return n.text === x.term; });
             return (already ? '<span class="muted">negative added</span>' : btn('− Negative', 'addNegative', [x.campaignId, x.term, Math.round(x.conversions), x.term === x.keyword ? 1 : 0], 'small ghost' + (x.conversions > 0 || x.term === x.keyword ? ' danger' : ''))) + (x.type === 'search' && x.adGroupId ? btn('＋ Keyword', 'addKeyword', [x.campaignId, x.adGroupId, x.term], 'small ghost') : '');
           }, csv: function () { return ''; }
-        }]), terms, { rowClass: function (x) { return x.excluded ? 'dim' : isWaste(x) ? 'waste' : ''; }, empty: stf === 'waste' ? 'No wasted spend on irrelevant search terms. Nice work.' : 'No search terms here (Search and Shopping campaigns only).' });
+        }]), terms, { rowClass: function (x) { return x.excluded ? 'dim' : isWaste(x) ? 'waste' : ''; }, empty: stf === 'waste' ? 'No wasted spend on irrelevant search terms. Nice work.' : 'No search terms here (Google Search campaigns only).' });
     }
     if (tab === 'audiences') {
       body = '<h3 class="section">Audience & content segments</h3>' + dataTable('rep-aud', [
@@ -1755,7 +1755,6 @@
       '<li><b>YouTube</b> results depend on the placement (in-stream, feeds, search, Shorts, TV screens, video partners), the format, the ABCD creative score, audience fit and inventory type. Conversions include engaged-view conversions.</li>' +
       '<li><b>Profit</b> = conversion value × margin − ad cost. Industry values are set so an average advertiser roughly breaks even; good setups earn a profit and poor ones lose money.</li>' +
       '<li><b>ChatGPT ads</b> appear below an answer, labeled Sponsored, in conversations that match your context hints, landing page and ad copy (a relevance-weighted second-price auction). Specific hints reach better conversations; vague hints drift off-target. Reported conversions depend on the pixel, Conversions API, {oppref} and attribution windows.</li>' +
-      '<li><b>Shopping</b> visibility depends on feed quality (titles, GTIN, images), price competitiveness and bids.</li>' +
       '<li>Each round has small random market changes (competition, seasonality). Results for the same setup in the same round are reproducible.</li></ul></div>';
   }
 
@@ -1766,7 +1765,7 @@
       '<div class="card"><h3>Save & share</h3><p>Your work is saved automatically in this browser. Export a file to submit it or move to another computer.</p><div class="row wrap">' +
       btn('⬇ Export project (.json)', 'exportJson', null, 'primary') + (S.rounds.length ? btn('⬇ Results overview (PDF)', 'downloadPdf') : '') + '<label class="btn">⬆ Import project<input type="file" accept="application/json,.json" data-action-change="importJson" hidden></label>' + (FRAMED ? '' : btn('🖨 Print latest report', 'print')) + '</div></div>' +
       '<div class="card"><h3>Reset</h3><p>Clear simulation rounds but keep your campaigns, or start over completely.</p><div class="row wrap">' + btn('Clear rounds', 'resetRounds', null, 'ghost danger') + btn('Start over', 'resetAll', null, 'danger') + '</div></div>' +
-      '<div class="card"><h3>About</h3><p>Digital Ad Lab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads, YouTube and Google Shopping are trademarks of Google LLC, and ChatGPT is a trademark of OpenAI; this project is not affiliated with either company.</p></div></div>';
+      '<div class="card"><h3>About</h3><p>Digital Ad Lab is a teaching simulator. Results are modeled estimates based on approximate industry benchmarks and baseline best practices — not real Google Ads data. Google Ads and YouTube are trademarks of Google LLC, and ChatGPT is a trademark of OpenAI; this project is not affiliated with either company.</p></div></div>';
   }
 
   // ---------------------------------------------------------------------------
