@@ -68,6 +68,7 @@
     { id: 'aff_auto', type: 'affinity', name: 'Affinity: Auto Enthusiasts', size: 60e6, inds: ['automotive'], kw: 'car cars auto vehicle truck' },
     { id: 'aff_biz', type: 'affinity', name: 'Affinity: Business Professionals', size: 95e6, inds: ['b2b', 'finance', 'legal', 'education'], kw: 'business software team teams agency agencies b2b' },
     { id: 'aff_outdoor', type: 'affinity', name: 'Affinity: Outdoor Enthusiasts', size: 65e6, inds: ['travel'], kw: 'outdoor outdoors camping hiking fishing hunting cooler coolers adventure gear' },
+    { id: 'aff_collectors', type: 'affinity', name: 'Affinity: Pop Culture & Collectors', size: 55e6, inds: ['retail'], kw: 'anime manga comics collectible collectibles figures figure plush dolls toys toy blind box pop culture vinyl merch' },
     { id: 'aff_value', type: 'affinity', name: 'Affinity: Value Shoppers', size: 120e6, inds: ['retail', 'beauty', 'restaurants'], kw: 'deals discount sale affordable cheap budget' },
     { id: 'im_travel', type: 'inMarket', name: 'In-market: Trips & Hotels', size: 30e6, inds: ['travel'], kw: 'travel trip hotel hotels vacation flights resort' },
     { id: 'im_edu', type: 'inMarket', name: 'In-market: Post-secondary & Online Education', size: 18e6, inds: ['education'], kw: 'course courses class classes degree school training certificate' },
@@ -80,6 +81,7 @@
     { id: 'im_autos', type: 'inMarket', name: 'In-market: Autos & Vehicles', size: 22e6, inds: ['automotive'], kw: 'car cars vehicle auto dealer' },
     { id: 'im_apparel', type: 'inMarket', name: 'In-market: Apparel & Accessories', size: 40e6, inds: ['retail', 'beauty'], kw: 'apparel clothing shoes shoe sneakers boots fashion accessories bags bag tote socks shirts dress jewelry' },
     { id: 'im_sports', type: 'inMarket', name: 'In-market: Sporting Goods & Outdoor Gear', size: 24e6, inds: ['health'], kw: 'sports sporting outdoor camping cooler coolers gear equipment running shoes fitness bike tumbler drinkware' },
+    { id: 'im_toys', type: 'inMarket', name: 'In-market: Toys, Games & Hobbies', size: 26e6, inds: ['retail'], kw: 'toys toy games game collectible collectibles figures plush dolls puzzles hobby lego anime blind box' },
     { id: 'im_coffee', type: 'inMarket', name: 'In-market: Gourmet Food & Coffee', size: 12e6, inds: ['restaurants'], kw: 'coffee tea gourmet food snack chocolate espresso' },
     { id: 'im_beauty', type: 'inMarket', name: 'In-market: Beauty Products & Services', size: 28e6, inds: ['beauty'], kw: 'beauty makeup skincare cosmetics fragrance perfume salon spa' },
     { id: 'im_dining', type: 'inMarket', name: 'In-market: Restaurants & Food Delivery', size: 35e6, inds: ['restaurants'], kw: 'restaurant delivery food pizza dining' },
@@ -120,7 +122,7 @@
     { id: 't_tech', name: 'Computers & Electronics', size: 60e6, inds: ['b2b'], kw: 'computer electronics software tech gadget' },
     { id: 't_outdoor', name: 'Outdoors & Hobbies', size: 45e6, inds: ['travel'], kw: 'outdoor outdoors camping hiking fishing hunting cooler coolers adventure gear' },
     { id: 't_news', name: 'News', size: 150e6, inds: [], kw: '' },
-    { id: 't_games', name: 'Games', size: 200e6, inds: [], kw: '' }
+    { id: 't_games', name: 'Games & Toys', size: 200e6, inds: [], kw: 'games gaming toys collectibles anime figures' }
   ];
 
   // Platforms in the order students see them; each campaign type is one platform

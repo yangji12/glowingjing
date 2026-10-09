@@ -26,7 +26,7 @@
   function evaluateSetup(state) {
     M.setBrand(state.account.businessName);
     var acc = state.account;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(state);
     var list = [];
     var enabled = state.campaigns.filter(function (c) { return c.status === 'enabled'; });
     var prev = state.rounds[state.rounds.length - 1];
@@ -360,9 +360,9 @@
     var noHints = groups.filter(function (g) { return !M.chatHints(g).length; });
     var vague = allHints.filter(function (h) { return h.label === 'Too vague' || h.label === 'Off-topic'; });
     var specific = allHints.filter(function (h) { return h.label === 'Specific'; });
-    ck({ id: 'chints', cat: 'Keywords & targeting', guide: 'CGPT-2', weight: 5, status: noHints.length === groups.length ? 'fail' : noHints.length || vague.length > allHints.length / 3 || specific.length < 3 ? 'warn' : 'pass', title: 'Context hints are specific and relevant',
+    ck({ id: 'chints', cat: 'Keywords & targeting', guide: 'CGPT-2', weight: 6, status: noHints.length ? 'fail' : vague.length > allHints.length / 3 || specific.length < 3 ? 'warn' : 'pass', title: 'Conversation targeting (context hints) is set and specific',
       detail: allHints.length + ' hint(s): ' + specific.length + ' specific, ' + vague.length + ' too vague or off-topic' + (vague.length ? ' (e.g., "' + vague.slice(0, 2).map(function (h) { return h.hint; }).join('", "') + '")' : '') + '.' + (noHints.length ? ' Ad group(s) without hints: ' + noHints.map(function (g) { return '"' + g.name + '"'; }).join(', ') + '.' : ''),
-      fix: 'Describe real conversations, needs and audiences in 4–14 words ("choosing a beginner espresso machine under $300"), not single words. Use separate ad groups for different products or audiences.' });
+      fix: 'In Targeting & ads, write the conversations your ad belongs in (4–14 words each, e.g. "choosing a beginner espresso machine under $300"), or click "Suggest hints from my business". Use separate ad groups for different products or audiences.' });
     if (c.source !== 'feed') {
       var reviews = [], ads = [];
       groups.forEach(function (g) { (g.ads || []).forEach(function (a) { ads.push(a); reviews.push(M.chatAdReview(a, state, g)); }); });
@@ -373,7 +373,7 @@
       var thin = groups.filter(function (g) { var t = U.uniq((g.ads || []).map(function (a) { return (a.title + '|' + a.body).toLowerCase(); })); return t.length < 2; });
       ck({ id: 'cangles', cat: 'Ads & creative', guide: 'CGPT-3', weight: 2, status: thin.length ? 'warn' : 'pass', title: 'Two or more ads with different angles', detail: thin.length ? thin.length + ' ad group(s) have only one distinct ad.' : 'Each ad group tests different angles.', fix: 'Add a second ad that leads with a different benefit, offer or audience.' });
     }
-    var cb = E.chatBench(D.INDUSTRIES[acc.industry], { competition: 1 });
+    var cb = E.chatBench(M.marketFor(state), { competition: 1 });
     var cpmBill = c.objective === 'views' || (c.objective === 'conversions' && c.convBilling === 'ocpm');
     var weak = groups.filter(function (g) { return g.bidStrategy === 'manual_max_bid' && (Number(g.maxBid) || 0) < (cpmBill ? cb.cpm * 0.8 : Math.max(3, cb.cpc * 0.7)); });
     if (groups.some(function (g) { return g.bidStrategy === 'manual_max_bid'; })) ck({ id: 'cbid', cat: 'Bidding & budget', guide: 'CGPT-4', weight: 3, status: weak.length ? 'warn' : 'pass', title: 'Manual bids are competitive', detail: weak.length ? 'Bid strength is weak in ' + weak.map(function (g) { return '"' + g.name + '"'; }).join(', ') + ' (typical: $' + (cpmBill ? cb.cpm.toFixed(0) + ' CPM' : cb.cpc.toFixed(2) + ' CPC') + ').' : 'Manual bids are near the market rate.', fix: 'OpenAI suggests starting at $3–5 per click; raise the bid or switch to Maximize results.' });
@@ -432,7 +432,7 @@
 
   function performanceScore(state, result) {
     var acc = state.account;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(state);
     var t = result.totals;
     var parts = [];
     var be = acc.margin > 0 ? 1 / acc.margin : 2.5;
@@ -506,7 +506,7 @@
 
   function feedback(state, result, setup, perf, prev) {
     var acc = state.account;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(state);
     var fb = [];
     var be = acc.margin > 0 ? 1 / acc.margin : 2.5;
     var t = result.totals;

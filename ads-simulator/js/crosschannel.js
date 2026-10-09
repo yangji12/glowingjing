@@ -7,6 +7,7 @@
   var U = AdSim.util;
   var D = AdSim.data;
   var E = AdSim.engine;
+  var M = AdSim.model;
 
   var ORDER = ['search', 'shopping', 'chatgpt', 'display', 'video'];
 
@@ -189,7 +190,7 @@
 
   function analyze(state, r, prev) {
     var acc = r.accountSnapshot || state.account;
-    var ind = D.INDUSTRIES[acc.industry] || D.INDUSTRIES.retail;
+    var ind = M.marketFor(Object.assign({}, state, { account: acc }));
     var margin = Number(acc.margin) || 0.4;
     var ctx = { bench: benchmarks(ind), be: margin > 0 ? 1 / margin : 2.5, margin: margin, tracked: !!r.tracked, goal: acc.goal, awareness: acc.goal === 'awareness' };
     var T = r.totals;

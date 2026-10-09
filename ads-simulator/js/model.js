@@ -214,6 +214,44 @@
     return { key: 'weak', rel: isTopic ? 0.25 : 0.35 };
   }
 
+  // The simulated market scaled to this business. Click prices track what a conversion is worth
+  // (value × margin) when a conversion is worth less than the industry default, so a $25 toy faces a
+  // fair market instead of $100-order click prices. Costs are also
+  // eased a little (GENEROSITY) so an average setup earns a profit and a good one earns more.
+  var GENEROSITY = 1.2;
+  var marketCache = {};
+  function marketFor(state) {
+    var acc = (state && state.account) || {};
+    var base = D.INDUSTRIES[acc.industry] || D.INDUSTRIES.retail;
+    var value = Number(acc.value) > 0 ? Number(acc.value) : base.value;
+    var margin = Number(acc.margin) > 0 ? Number(acc.margin) : base.margin;
+    // only ever cheaper: a business worth more than the industry default keeps the normal market
+    var econ = U.clamp((value * margin) / (base.value * base.margin), 0.1, 1) / GENEROSITY;
+    var key = (acc.industry || 'retail') + '|' + econ.toFixed(4);
+    if (marketCache[key]) return marketCache[key];
+    var m = Object.assign({}, base, {
+      search: Object.assign({}, base.search, { cpc: base.search.cpc * econ }),
+      display: Object.assign({}, base.display, { cpc: base.display.cpc * econ }),
+      shopping: Object.assign({}, base.shopping, { cpc: base.shopping.cpc * econ }),
+      video: Object.assign({}, base.video, { cpv: base.video.cpv * econ }),
+      econ: econ
+    });
+    return (marketCache[key] = m);
+  }
+
+  // Starter context hints for ChatGPT ads, written as the conversations a buyer would have
+  function suggestHints(state) {
+    var acc = state.account;
+    var phrases = descriptionPhrases(acc.description).slice(0, 4);
+    (state.products || []).slice(0, 2).forEach(function (p) { var t = U.contentTokens(p.title || '').slice(0, 3).join(' '); if (t && phrases.indexOf(t) < 0) phrases.push(t); });
+    if (!phrases.length) phrases = [contentTopic(state)];
+    var tpl = ['choosing the best {p} for a beginner', 'where to buy {p} online with fast shipping', '{p} gift ideas for a friend', 'is {p} worth the price compared with alternatives', 'how to pick {p} that lasts'];
+    var out = phrases.map(function (p, i) { return tpl[i % tpl.length].replace('{p}', p); });
+    if (phrases.length >= 2) out.push('comparing ' + phrases[0] + ' and ' + phrases[1]);
+    if (acc.businessName) out.push('is ' + acc.businessName + ' a good choice for ' + phrases[0]);
+    return U.uniq(out).slice(0, 8);
+  }
+
   function brandTokens(state) {
     return U.contentTokens(state.account.businessName);
   }
@@ -666,7 +704,7 @@
   }
 
   AdSim.model = {
-    newChatAd: newChatAd, setBrand: setBrand, segmentFit: segmentFit, excessiveCaps: excessiveCaps, chatHints: chatHints, hintQuality: hintQuality, chatAdReview: chatAdReview,
+    newChatAd: newChatAd, marketFor: marketFor, suggestHints: suggestHints, setBrand: setBrand, segmentFit: segmentFit, excessiveCaps: excessiveCaps, chatHints: chatHints, hintQuality: hintQuality, chatAdReview: chatAdReview,
     newState: newState, newCampaign: newCampaign, newAdGroup: newAdGroup, newRSA: newRSA, newRDA: newRDA,
     newVideoAd: newVideoAd, newProduct: newProduct, newTargeting: newTargeting, businessVocab: businessVocab,
     relevance: relevance, intentOf: intentOf, policyIssues: policyIssues, rsaStrength: rsaStrength,

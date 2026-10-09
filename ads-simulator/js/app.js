@@ -348,7 +348,7 @@
     for (var i = r.round - 2; i >= 0; i--) if ((S.rounds[i].scope || 'all') === (r.scope || 'all')) return S.rounds[i];
     return null;
   }
-  function industry() { return D.INDUSTRIES[S.account.industry] || D.INDUSTRIES.retail; }
+  function industry() { return M.marketFor(S); }
   function convCell(r, v, f) { return r && !r.tracked ? '<span class="muted" title="Conversion tracking was off">—</span>' : (f || fNum)(v, 0); }
 
   function roundSelect() {
@@ -522,7 +522,7 @@
         '<div class="row wrap">' + btn('✨ Create a starter Search campaign', 'quickStart', null, 'primary') + '</div>' +
         '<p class="help">Builds a draft from your ' + (demo ? 'demo business' : 'description and industry') + ' with Google-style defaults (broad match, network expansion on, few assets). It will run, but not well. Your job is to improve it using the feedback.</p></div>';
     }
-    var bench = '<div class="card"><h3>Market benchmarks: ' + esc(ind.name) + '</h3><p class="muted">Approximate industry averages used by the simulator.</p><div class="table-wrap"><table class="data compact"><thead><tr><th></th><th class="num">CTR</th><th class="num">Avg. CPC</th><th class="num">Conv. rate</th><th class="num">Cost / conv.</th></tr></thead><tbody>' +
+    var bench = '<div class="card"><h3>Market benchmarks: ' + esc(ind.name) + '</h3><p class="muted">Approximate industry averages used by the simulator. Click prices are scaled to your value per conversion and profit margin, so the market stays fair whether you sell a $20 product or a $2,000 service.</p><div class="table-wrap"><table class="data compact"><thead><tr><th></th><th class="num">CTR</th><th class="num">Avg. CPC</th><th class="num">Conv. rate</th><th class="num">Cost / conv.</th></tr></thead><tbody>' +
       [['Search', ind.search], ['Display', E.displayBench(ind)]].map(function (x) {
         return '<tr><td>' + x[0] + '</td><td class="num">' + fPct(x[1].ctr) + '</td><td class="num">' + fMoney(x[1].cpc) + '</td><td class="num">' + fPct(x[1].cvr) + '</td><td class="num">' + fMoney(x[1].cpc / x[1].cvr) + '</td></tr>';
       }).join('') + (function () { var cb = E.chatBench(ind, { competition: 1 }); return '<tr><td>ChatGPT ads</td><td class="num">' + fPct(cb.ctr) + '</td><td class="num">' + fMoney(cb.cpc) + '</td><td class="num">' + fPct(cb.cvr) + '</td><td class="num">' + fMoney(cb.cpc / cb.cvr) + '</td></tr>'; })() +
@@ -690,7 +690,7 @@
     if (c.type === 'search') tabs.push(['adgroups', 'Ad groups & keywords'], ['ads', 'Ads'], ['assets', 'Assets']);
     if (c.type === 'display' || c.type === 'video') tabs.push(['targeting', 'Ad groups & targeting'], ['ads', 'Ads']);
     if (c.type === 'shopping') tabs.push(['products', 'Product groups & preview']);
-    if (c.type === 'chatgpt') tabs = [['settings', '1 · Create campaign'], ['adgroups', '2 · Ad groups & ads'], ['review', '3 · Review']];
+    if (c.type === 'chatgpt') tabs = [['settings', '1 · Create campaign'], ['adgroups', '2 · Targeting & ads'], ['review', '3 · Review']];
     else tabs.push(['checks', 'Checklist']);
     var tab = UI.params[1] || 'settings';
     if (!tabs.some(function (t) { return t[0] === tab; })) tab = 'settings';
@@ -730,8 +730,8 @@
         field('Billing', select(base + '.convBilling', [['ocpc', 'Pay per click (oCPC)'], ['ocpm', 'Pay per 1,000 impressions (oCPM)']])) + '</div>' +
         (S.account.conversionTracking ? '' : '<p class="bad-text">Conversions campaigns need the measurement pixel: turn on conversion tracking in Business & website.</p>');
     }
-    h += '<p class="lbl">Ads come from</p>' + radio(base + '.source', 'manual', 'Ads you write (title, body, image)') +
-      radio(base + '.source', 'feed', 'Product feed', 'Each approved product in your feed becomes a candidate ad, shown as a product carousel. Country-level location targeting only.') + '</div>';
+    h += '<p class="lbl">Ads come from</p>' + radio(base + '.source', 'manual', 'Ads you write (title, body and an image you upload)', 'Recommended. You write each ad and upload its image in step 2.') +
+      radio(base + '.source', 'feed', 'Product feed (no ads to write)', 'Each approved product in your feed becomes a card in a product carousel. There is no title, body or image to upload. Country-level location targeting only.') + '</div>';
     h += '<div class="card"><h3>Budget ' + guideLink('CGPT-4') + '</h3>' + radio(base + '.budgetType', 'daily', 'Daily budget', 'An average over 7 days: a single day can spend up to 2× the daily budget, but never more than 7× in a week.') +
       radio(base + '.budgetType', 'total', 'Campaign total budget', 'The total for the whole campaign (here: one 30-day round). The stricter control.') +
       (c.budgetType === 'total' ? field('Campaign total ($)', input(base + '.totalBudget', { type: 'number', min: 0, step: 10 })) :
@@ -750,7 +750,7 @@
       '<div class="grid2">' + field('Click-through window', select(base + '.clickWindow', [[7, '7 days'], [14, '14 days'], [30, '30 days']], { type: 'number' })) +
       field('View-through window', select(base + '.viewWindow', [[0, '0 days (off)'], [1, '1 day']], { type: 'number' })) + '</div>' +
       '<p class="help">Windows change how many conversions are reported, not how many happen.</p></div>';
-    h += '<div class="row">' + '<a class="btn primary" href="#/campaign/' + c.id + '/adgroups">Next: Ad groups & ads →</a></div>';
+    h += '<div class="row">' + '<a class="btn primary" href="#/campaign/' + c.id + '/adgroups">Next: Targeting & ads →</a></div>';
     return h;
   }
 
@@ -796,35 +796,46 @@
     var cpmBill = c.objective === 'views' || (c.objective === 'conversions' && c.convBilling === 'ocpm');
     var cats = U.uniq(S.products.map(function (p) { return p.category; }).filter(Boolean));
     var brands = U.uniq(S.products.map(function (p) { return p.brand; }).filter(Boolean));
-    var h = '<div class="card info-card">An ad group is a set of ads around one product, service, theme or need. Its <b>context hints</b> tell ChatGPT when your ads may be relevant; ads are matched using the conversation, your landing page, title, copy and hints, in a relevance-weighted second-price auction. ' + guideLink('CGPT-2') + '</div>';
+    var h = '<div class="card info-card">An ad group is a set of ads around one product, service, theme or need. <b>Conversation targeting</b> (context hints) tells ChatGPT which conversations your ads belong in; ads are then matched using the conversation, your landing page, title, copy and hints, in a relevance-weighted second-price auction. ' + guideLink('CGPT-2') + '</div>';
     (c.adGroups || []).forEach(function (g, gi) {
       var gb = base + '.adGroups.' + gi;
+      var hints = M.chatHints(g);
       h += '<div class="card"><div class="card-head"><h3>Ad group ' + (gi + 1) + '</h3>' + (c.adGroups.length > 1 ? btn('Remove', 'removeAdGroup', [c.id, g.id], 'small ghost danger') : '') + '</div>' +
         field('Ad group name', input(gb + '.name')) +
-        '<p class="lbl">Bid strategy ' + guideLink('CGPT-4') + '</p>' + radio(gb + '.bidStrategy', 'max_results', 'Maximize results', "We'll automatically adjust your bid to get the most results from your budget.") +
+        // A · targeting first: without it the ad barely shows
+        '<h4 class="step-h"><span class="step-n">A</span> Conversation targeting ' + guideLink('CGPT-2') + '</h4>' +
+        (hints.length ? '' : '<div class="warn-card"><p><b>No conversation targeting yet.</b> Write the conversations where your ad should appear (one per line), or let the simulator suggest some from your business details.</p>' + btn('✨ Suggest hints from my business', 'suggestHints', gb, 'small primary') + '</div>') +
+        field('Context hints: the conversations your ad should appear in (one per line)', textarea(gb + '.hintsText', { rows: 6, placeholder: examplePh('hints') }),
+          'Describe real needs and questions in 4–14 words, e.g. "choosing a beginner espresso machine under $300". They guide matching; they are not exact-match keywords. Up to ' + C.maxHints.toLocaleString() + ' per ad group.') +
+        (hints.length ? '<div class="row">' + btn('✨ Suggest more hints from my business', 'suggestHints', gb, 'small ghost') + '</div>' : '') +
+        live('hints-' + g.id, function () { return hintAnalysis(g); }) +
+        // B · bidding and landing page
+        '<h4 class="step-h"><span class="step-n">B</span> Bidding & landing page ' + guideLink('CGPT-4') + '</h4>' +
+        radio(gb + '.bidStrategy', 'max_results', 'Maximize results', "We'll automatically adjust your bid to get the most results from your budget.") +
         radio(gb + '.bidStrategy', 'manual_max_bid', 'Manual: Max ' + (cpmBill ? 'CPM' : 'CPC')) +
         (g.bidStrategy === 'manual_max_bid' ? field('Max bid ($ ' + (cpmBill ? 'per 1,000 impressions' : 'per click') + ')', input(gb + '.maxBid', { type: 'number', min: 0, step: 0.25 })) + live('bid-' + g.id, function () { return bidStrength(c, g); }) : '') +
-        field('Landing page query parameters', '<div class="row">' + input(gb + '.queryParams', { placeholder: 'campaign_id={campaign_id}&ad_id={ad_id}', cls: 'grow' }) + btn('Insert tracking template', 'chatTemplate', gb, 'small ghost') + '</div>',
-          'Optional. Appends missing query parameters. Supported template values: ' + C.templateValues.join(', ') + '. {oppref} is the click reference the Conversions API uses to match conversions.') +
         field('Default ad destination URL', input(gb + '.defaultUrl', { inputType: 'url', placeholder: S.account.website }), 'Used for new ads in this ad group.') +
-        field('Context hints (optional) — one per line', textarea(gb + '.hintsText', { rows: 6, placeholder: examplePh('hints') }),
-          'Describe the conversations, topics or needs where your product is relevant. These guide matching but are not exact-match targeting rules.') +
-        live('hints-' + g.id, function () { return hintAnalysis(g); });
+        field('Landing page query parameters (optional)', '<div class="row">' + input(gb + '.queryParams', { placeholder: 'campaign_id={campaign_id}&ad_id={ad_id}', cls: 'grow' }) + btn('Insert tracking template', 'chatTemplate', gb, 'small ghost') + '</div>',
+          'Appends missing query parameters. Supported template values: ' + C.templateValues.join(', ') + '. {oppref} is the click reference the Conversions API uses to match conversions.');
       if (feed) {
         var pf = g.productFilter || (g.productFilter = { dimension: 'all', value: '' });
         var values = pf.dimension === 'category' ? cats : pf.dimension === 'brand' ? brands : [];
-        h += '<p class="lbl">Products in this ad group</p><div class="grid2">' + field('Filter by', select(gb + '.productFilter.dimension', [['all', 'All products'], ['category', 'Category'], ['brand', 'Brand']])) +
+        var approved = S.products.filter(function (p) { return M.feedQuality(p).approved; }).length;
+        h += '<h4 class="step-h"><span class="step-n">C</span> Product ads</h4>' +
+          '<div class="warn-card"><p><b>This campaign builds its ads from your product feed</b> (' + approved + ' approved product' + (approved === 1 ? '' : 's') + '), so there is no title, body or image to upload here. ' + (approved ? 'Each approved product becomes a card in a product carousel.' : '<b>Add products with an image in Product feed, or switch to ads you write.</b>') + '</p>' +
+          btn('Switch to ads I write (title, body, image)', 'setPathVal', [base + '.source', 'manual'], 'small primary') + ' <a class="btn small" href="#/feed">Open product feed</a></div>' +
+          '<div class="grid2">' + field('Products in this ad group', select(gb + '.productFilter.dimension', [['all', 'All products'], ['category', 'Category'], ['brand', 'Brand']])) +
           (pf.dimension === 'all' ? '<div></div>' : field('Value', select(gb + '.productFilter.value', [['', '— choose —']].concat(values.map(function (v) { return [v, v]; }))))) + '</div>' +
           '<p class="lbl">Preview</p>' + previewToolbar() + live('cprev-' + g.id, function () { return chatPreview(c, g, null); }) + '</div>';
         return;
       }
-      h += '</div>';
+      h += '<h4 class="step-h"><span class="step-n">C</span> Your ads ' + guideLink('CGPT-3') + '</h4><p class="help">Each ad has a title, body copy, a square image you upload (or generated artwork) and a destination URL. Write two or more ads with different angles.</p></div>';
       (g.ads || []).forEach(function (ad, ai) {
         var ab = gb + '.ads.' + ai;
         h += '<div class="card"><div class="card-head"><h3>' + esc(g.name) + ' · Ad ' + (ai + 1) + '</h3><div>' + btn('🎯 Stimulus view', 'openStim', [c.id, g.id, ai], 'small') + (g.ads.length > 1 ? btn('Remove ad', 'removeAd', [c.id, g.id, ai], 'small ghost danger') : '') + '</div></div><div class="ad-editor"><div>' +
           field('Title', input(ab + '.title', { max: C.titleMax }), 'Recommended ' + C.titleRec[0] + '–' + C.titleRec[1] + ' characters. Say clearly what the product does. ' + guideLink('CGPT-3')) +
           field('Body', input(ab + '.body', { max: C.bodyMax }), 'Recommended ' + C.bodyRec[0] + '–' + C.bodyRec[1] + ' characters. Each ad should take a different angle.') +
-          field('Image', imageField(ab + '.image', 'chat')) +
+          field('Image (upload a square image)', imageField(ab + '.image', 'chat')) +
           field('Destination URL', input(ab + '.url', { inputType: 'url', placeholder: g.defaultUrl || S.account.website })) +
           '</div><div class="ad-side">' + live('crev-' + g.id + '-' + ai, function () {
             var rv = M.chatAdReview(ad, S, g);
@@ -2075,6 +2086,13 @@
       save(); render(true);
     },
     cancelNew: function () { UI.newCamp = null; render(); },
+    suggestHints: function (el, gb) {
+      var cur = String(getPath(S, gb + '.hintsText') || '').split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+      var add = M.suggestHints(S).filter(function (x) { return cur.indexOf(x) < 0; });
+      if (!add.length) { toast('No new hints to suggest. Add more detail in Business & website.'); return; }
+      setPath(S, gb + '.hintsText', cur.concat(add).join('\n'));
+      save(); render(true); toast(add.length + ' hint(s) added. Edit them to match the conversations your customers really have.');
+    },
     setSimScope: function (el, t) { UI.simScope = t; render(true); },
     newPlatformCampaign: function (el, t) { UI.newCamp = { type: t, goal: S.account.goal, fixed: t }; if (UI.route !== 'platform' || UI.params[0] !== t) location.hash = '#/platform/' + t; render(); },
     createCampaign: function () {

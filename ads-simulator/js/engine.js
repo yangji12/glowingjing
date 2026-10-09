@@ -174,7 +174,7 @@
   var DISPLAY_EFF = 0.7;
   // engaged-view conversions are worth more where a conversion is worth more, so high-CPA industries
   // (legal, B2B, finance) were over-credited; low-CPA retail video is already near break-even
-  function videoEff(ind) { return U.clamp(1 - (ind.search.cpc / ind.search.cvr - 45) / 200, 0.6, 1); }
+  function videoEff(ind) { return U.clamp(1 - (ind.search.cpc / ind.search.cvr - 60) / 400, 0.8, 1); }
 
   function upperFunnelCvr(ind) {
     var searchCpa = ind.search.cpc / ind.search.cvr;
@@ -269,7 +269,7 @@
     else if (n === 2) v = 3000 + u * 20000;
     else if (n === 3) v = 600 + u * 5000;
     else v = 80 + u * 1200;
-    var ind = D.INDUSTRIES[ctx.acc.industry];
+    var ind = M.marketFor(ctx.state);
     return v * ind.volume;
   }
 
@@ -277,7 +277,7 @@
     var ctx = makeContext(state, { preview: true });
     var intent = M.intentOf(text, state);
     var vol = baseSearchVolume(text, intent, ctx);
-    var ind = D.INDUSTRIES[state.account.industry];
+    var ind = M.marketFor(state);
     var n = U.words(text).length;
     var cpc = ind.search.cpc * INTENT[intent].cpc * (n <= 1 ? 1.35 : n >= 4 ? 0.8 : 1);
     var comp = U.clamp(ind.competition * (n <= 1 ? 1.2 : n >= 3 ? 0.8 : 1) * (intent === 'high' ? 1.15 : 1), 0, 1);
@@ -306,7 +306,7 @@
   // Returns [{term, share, kind}] for a keyword given its match type
   function expandTerms(kw, ctx, smart) {
     var text = kw.text;
-    var ind = D.INDUSTRIES[ctx.acc.industry];
+    var ind = M.marketFor(ctx.state);
     if (kw.match === 'exact') return [{ term: text, share: 1, kind: 'core' }];
     var shares = kw.match === 'phrase'
       ? { core: 0.5, high: 0.32, low: 0.18, related: 0 }
@@ -369,7 +369,7 @@
   function simSearch(c, ctx) {
     var res = campaignShell(c);
     var acc = ctx.acc;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(ctx.state);
     var loc = locationFactors(c, acc);
     if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
     var sched = scheduleFactors(c, acc.industry);
@@ -661,7 +661,7 @@
   }
 
   function placementRows(c, seg, m, ctx, excludeApps) {
-    var ind = D.INDUSTRIES[ctx.acc.industry];
+    var ind = M.marketFor(ctx.state);
     var w = ind.vocab.split(' ')[0];
     var names = [w + 'insider.example', 'the' + w + 'guide.example', w + 'forum.example'];
     return names;
@@ -674,7 +674,7 @@
   function simDisplay(c, ctx) {
     var res = campaignShell(c);
     var acc = ctx.acc;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(ctx.state);
     var loc = locationFactors(c, acc);
     if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
     var sched = scheduleFactors(c, acc.industry);
@@ -773,11 +773,11 @@
       var clicks = stochRound(webClicks + appClicks, rnd);
       var webShare = U.safeDiv(webClicks, webClicks + appClicks);
       var cvr = u.cvr * smartBoost * DISPLAY_EFF;
-      var conv = stochRound(clicks * webShare * cvr + clicks * (1 - webShare) * cvr * 0.05, rnd);
+      var conv = Math.round((clicks * webShare * cvr + clicks * (1 - webShare) * cvr * 0.05) * 100) / 100;
       var cost = impr * row.cpm / 1000;
       // view-through conversions: saw the ad, didn't click, converted later (50% credit in value)
       // tied to impression cost vs. a Search conversion, so they stay modest in every industry
-      var vt = stochRound(impr * 0.35 * (u.benchCpm / 1000) / (ind.search.cpc / ind.search.cvr) * (0.2 + 0.8 * u.seg.rel) * Math.sqrt(u.tp.cvr) * STRENGTH_CTR[u.strength] * DISPLAY_EFF, rnd);
+      var vt = Math.round(impr * 0.35 * (u.benchCpm / 1000) / (ind.search.cpc / ind.search.cvr) * (0.2 + 0.8 * u.seg.rel) * Math.sqrt(u.tp.cvr) * STRENGTH_CTR[u.strength] * DISPLAY_EFF * 100) / 100;
       var value = (conv + vt * 0.5) * acc.value * (0.9 + 0.2 * rnd());
       var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv, value: value, viewThrough: vt, eligible: row.eligible };
       addMetrics(res, m);
@@ -844,7 +844,7 @@
   function simVideo(c, ctx) {
     var res = campaignShell(c);
     var acc = ctx.acc;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(ctx.state);
     var loc = locationFactors(c, acc);
     if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
     var dev = deviceFactors(c, acc.industry);
@@ -1005,8 +1005,9 @@
       var views = Math.round(impr * u.vr);
       var clicks = stochRound(impr * u.ctr * q, rnd);
       var cost = impr * row.p.cpi;
-      var conv = stochRound(clicks * u.cvr * smartBoost * videoEff(ind), rnd);
-      var evc = stochRound(impr * u.evcImpr * smartBoost * q * videoEff(ind), rnd);
+      // expected values, not coin-flip rounding: a few conversions should not swing a round
+      var conv = Math.round(clicks * u.cvr * smartBoost * videoEff(ind) * 100) / 100;
+      var evc = Math.round(impr * u.evcImpr * smartBoost * q * videoEff(ind) * 100) / 100;
       var value = (conv + evc) * acc.value * (0.9 + 0.2 * rnd());
       var m = { impressions: impr, clicks: clicks, cost: cost, conversions: conv + evc, value: value, views: views, viewThrough: evc, eligible: row.eligible };
       addMetrics(res, m);
@@ -1094,7 +1095,7 @@
   function simShopping(c, ctx) {
     var res = campaignShell(c);
     var acc = ctx.acc;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(ctx.state);
     var loc = locationFactors(c, acc);
     if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
     var sched = scheduleFactors(c, acc.industry);
@@ -1229,7 +1230,9 @@
   // CPC ≈ $4 retail … $10 software/finance. Conversion rate is set so an average advertiser's
   // cost per conversion is ~1.1× the Search benchmark (good hints and copy do better).
   function chatBench(ind, market) {
-    var f = U.clamp(ind.search.cpc / 2.5, 0.8, 2.0);
+    // ChatGPT prices follow the industry's Search prices, then scale with the business's economics like every channel
+    var econ = ind.econ || 1;
+    var f = U.clamp((ind.search.cpc / econ) / 2.5, 0.8, 2.0) * econ;
     var cpm = D.CHATGPT.cpm * f * market.competition;
     var cpc = cpm / (1000 * D.CHATGPT.ctr);
     var searchCpa = ind.search.cpc / ind.search.cvr;
@@ -1292,7 +1295,7 @@
     var res = campaignShell(c);
     var acc = ctx.acc;
     var C = D.CHATGPT;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(ctx.state);
     var loc = locationFactors(c, acc);
     if (!loc.weight) { res.errors.push('No locations targeted'); return res; }
     var platforms = (c.platforms || []).map(function (id) { return C.platforms.find(function (p) { return p[0] === id; }); }).filter(Boolean);
@@ -1513,7 +1516,7 @@
 
   function analytics(campaigns, ctx) {
     var acc = ctx.acc;
-    var ind = D.INDUSTRIES[acc.industry];
+    var ind = M.marketFor(ctx.state);
     var chan = {
       search: { name: 'Paid Search', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.72 },
       shopping: { name: 'Paid Shopping', sessions: 0, conv: 0, value: 0, q: 0, lp: 0, clicks: 0, newU: 0.78 },

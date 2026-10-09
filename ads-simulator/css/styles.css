@@ -762,3 +762,5 @@ h1 details.info-tip, h2 details.info-tip, h3 details.info-tip, h4 details.info-t
 .opt-row { display: flex; align-items: flex-start; gap: 2px; }
 .opt-row > .check { flex: 0 1 auto; }
 .opt-row > details.info-tip { margin-top: 6px; }
+.step-h { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; font-size: 15px; }
+.step-h .step-n { width: 24px; height: 24px; font-size: 12px; }
