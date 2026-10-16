@@ -1791,7 +1791,7 @@
       '<li><b>Conversion rate</b> depends on search intent, keyword relevance to your business, landing page, location fit, device and schedule.</li>' +
       '<li><b>Display/Video reach</b> depends on audience size, demographics, and your bid vs. market CPM; frequency above ~10/month causes fatigue.</li>' +
       '<li><b>YouTube</b> results depend on the placement (in-stream, feeds, search, Shorts, TV screens, video partners), the format, the ABCD creative score, audience fit and inventory type. Conversions include engaged-view conversions.</li>' +
-      '<li><b>Profit</b> = conversion value × margin − ad cost. Industry values are set so an average advertiser roughly breaks even; good setups earn a profit and poor ones lose money.</li>' +
+      '<li><b>Profit</b> = conversion value × margin − ad cost. Every campaign that spends money ends the round with at least a small profit; good setups earn far more. The size of the profit is the score to beat.</li>' +
       '<li><b>ChatGPT ads</b> appear below an answer, labeled Sponsored, in conversations that match your context hints, landing page and ad copy (a relevance-weighted second-price auction). Specific hints reach better conversations; vague hints drift off-target. Reported conversions depend on the pixel, Conversions API, {oppref} and attribution windows.</li>' +
       '<li>Each round has small random market changes (competition, seasonality). Results for the same setup in the same round are reproducible.</li></ul></details>';
   }

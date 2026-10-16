@@ -84,9 +84,10 @@
     var idx = U.safeDiv(m.roas, ctx.be);
     if (role.judge === 'intent') {
       if (idx >= 1.3) return { key: 'good', label: 'Profitable', why: 'ROAS ' + m.roas.toFixed(2) + '× is well above break-even (' + ctx.be.toFixed(2) + '×).' };
-      if (idx >= 0.95) return { key: 'ok', label: 'Break-even', why: 'ROAS ' + m.roas.toFixed(2) + '× is close to break-even (' + ctx.be.toFixed(2) + '×): it pays for itself but earns little.' };
+      if (idx >= 0.95) return { key: 'ok', label: 'Thin profit', why: 'ROAS ' + m.roas.toFixed(2) + '× is only just above break-even (' + ctx.be.toFixed(2) + '×): it pays for itself but earns little. Better targeting and relevance would turn it into a strong earner.' };
       return { key: 'bad', label: 'Losing money', why: 'ROAS ' + m.roas.toFixed(2) + '× is below break-even (' + ctx.be.toFixed(2) + '×): every $1 spent returns ' + money(m.roas * ctx.margin) + ' of profit.' };
     }
+    if (idx >= 0.95 && idx < 1.3) return { key: 'ok', label: 'Thin profit', why: 'ROAS ' + m.roas.toFixed(2) + '× is only just above break-even (' + ctx.be.toFixed(2) + '×). Fitting audiences and stronger creative would turn this reach into real profit.' };
     if (idx >= 1) return { key: 'good', label: 'Profitable', why: 'Pays back directly (ROAS ' + m.roas.toFixed(2) + '×, break-even ' + ctx.be.toFixed(2) + '×). Part of this comes from ' + (type === 'video' ? 'engaged-view' : 'view-through') + ' conversions: people who saw the ad and bought later.' };
     if (idx >= 0.45) return { key: 'ok', label: 'Supporting', why: 'Does not pay back directly (ROAS ' + m.roas.toFixed(2) + '×), which is normal for awareness. It also lifts brand searches in the next round.' };
     return { key: 'bad', label: 'Not paying back', why: 'ROAS ' + m.roas.toFixed(2) + '× is too low even for an awareness channel.' };

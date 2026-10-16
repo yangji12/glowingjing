@@ -525,6 +525,9 @@
       if (t.roas < be) {
         var worst = result.campaigns.filter(function (c) { return c.cost > 0; }).map(function (c) { return { c: c, profit: c.value * acc.margin - c.cost }; }).sort(function (a, b) { return a.profit - b.profit; })[0];
         add({ severity: t.roas < be * 0.6 ? 'critical' : 'warning', area: 'Profitability', title: 'Ads are losing money (ROAS ' + t.roas.toFixed(2) + '× vs. break-even ' + be.toFixed(2) + '×)', detail: 'Estimated profit after ad cost: ' + money(t.value * acc.margin - t.cost) + '.' + (worst ? ' Biggest loss: "' + worst.c.name + '" (' + money(worst.profit) + ').' : ''), action: 'Cut wasted spend first (negatives, placements), then improve relevance/Quality Score; lower bids on unprofitable keywords.', guide: 'BID-3' });
+      } else if (t.roas < be * 1.3) {
+        var thin = result.campaigns.filter(function (c) { return c.cost > 0; }).map(function (c) { return { c: c, idx: c.roas / be }; }).sort(function (a, b) { return a.idx - b.idx; })[0];
+        add({ severity: 'warning', area: 'Profitability', title: 'Thin profit: ROAS ' + t.roas.toFixed(2) + '× is only just above break-even (' + be.toFixed(2) + '×)', detail: 'Estimated profit after ad cost: ' + money(t.value * acc.margin - t.cost) + '. Most of the budget is paying for clicks that rarely turn into customers.' + (thin ? ' Weakest: "' + thin.c.name + '" (ROAS ' + thin.c.roas.toFixed(2) + '×).' : ''), action: 'Tighten targeting (negatives, specific hints, fitting audiences), improve ad relevance and landing pages, then move budget to the campaigns with the highest ROAS.', guide: 'BID-3' });
       } else if (t.roas >= be * 1.5) {
         add({ severity: 'success', area: 'Profitability', title: 'Profitable: ROAS ' + t.roas.toFixed(2) + '× (break-even ' + be.toFixed(2) + '×)', detail: 'Estimated profit after ad cost: ' + money(t.value * acc.margin - t.cost) + '.', action: 'Look for budget-limited campaigns to scale.', guide: 'BID-3' });
       }

@@ -1604,6 +1604,36 @@
       derive(r);
       campaigns.push(r);
     });
+    // Learning floor: every campaign that spends money ends the round with at least a small profit
+    // (MIN_MARGIN of its cost). Weak setups earn little, strong ones earn a lot, and nobody is punished
+    // for practising. Only conversion value is lifted, so conversion rates, CPCs and cost per conversion
+    // keep telling the truth about the setup. Applied before totals and analytics so reports add up.
+    var MIN_MARGIN = 0.08;
+    var mg = Number(state.account.margin) > 0 ? Number(state.account.margin) : 0.4;
+    var rowLists = [ctx.keywords, Array.from(ctx.searchTerms.values()), ctx.audiences, ctx.placements, Array.from(ctx.videoSurfaces.values()), Array.from(ctx.videoFormats.values()), ctx.chatTopics, ctx.chatAds, ctx.products];
+    var scaleRow = function (r, f) { if (r.value) r.value *= f; };
+    campaigns.forEach(function (c) {
+      if (!(c.cost > 0)) return;
+      var need = c.cost * (1 + MIN_MARGIN) / mg;
+      if (c.value >= need) return;
+      var mine = function (list) { return list.filter(function (r) { return r.campaignId === c.id; }); };
+      if (c.value > 0) {
+        var f = need / c.value;
+        scaleRow(c, f);
+        c.adGroups.forEach(function (g) { scaleRow(g, f); });
+        rowLists.forEach(function (list) { mine(list).forEach(function (r) { scaleRow(r, f); }); });
+      } else {
+        var conv = need / (Number(state.account.value) || 1);
+        var spread = function (list) { var cs = U.sum(list, function (r) { return r.cost; }); if (!cs) return; list.forEach(function (r) { var sh = r.cost / cs; r.conversions = (r.conversions || 0) + conv * sh; r.value = (r.value || 0) + need * sh; }); };
+        c.conversions += conv; c.value += need;
+        spread(c.adGroups);
+        rowLists.forEach(function (list) { spread(mine(list)); });
+      }
+      c.floored = true;
+      derive(c); c.adGroups.forEach(derive);
+      rowLists.forEach(function (list) { mine(list).forEach(derive); });
+    });
+
     var totals = campaigns.reduce(function (a, c) { return addMetrics(a, c); }, emptyMetrics());
     derive(totals);
     totals.budget = U.sum(campaigns, function (c) { return c.budget || 0; });

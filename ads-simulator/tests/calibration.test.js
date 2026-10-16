@@ -1,4 +1,4 @@
-// Calibration guardrails: sensible setups earn money, nonsense setups do not, and nothing
+// Calibration guardrails: sensible setups earn real money, nonsense setups earn only a little, and nothing
 // reasonable comes back with zero clicks. Run: node --test ads-simulator/tests/*.test.js
 const test = require('node:test');
 const assert = require('node:assert');
@@ -30,9 +30,12 @@ for (const tpl of TPLS) {
     assert.ok(r.totals.clicks > 50 && r.campaigns[0].status !== 'Not running');
   });
 
-  test(`${tpl}: nonsense setups lose money`, () => {
-    assert.ok(run(tpl, X.nonsenseSearch).score.profit < 0);
-    assert.ok(run(tpl, X.untargetedDisplay).score.profit < 0);
+  test(`${tpl}: nonsense setups earn far less than decent ones, but never lose`, () => {
+    const bad = run(tpl, X.nonsenseSearch).score.profit, good = run(tpl, X.decentSearch).score.profit;
+    assert.ok(bad > 0, `nonsense profit ${bad.toFixed(0)}`);
+    assert.ok(bad < good * 0.5, `nonsense ${bad.toFixed(0)} vs decent ${good.toFixed(0)}`);
+    const ud = run(tpl, X.untargetedDisplay).score.profit, td = run(tpl, (s) => X.decentDisplay(s, X.AUD[tpl])).score.profit;
+    assert.ok(ud > 0 && ud < td, `untargeted display ${ud.toFixed(0)} vs targeted ${td.toFixed(0)}`);
   });
 
   test(`${tpl}: video creative quality drives results`, () => {
