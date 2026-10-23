@@ -1303,7 +1303,7 @@
   }
 
   // ----- Cross-channel results -----
-  var XC_TABS = [['overview', 'Final overview'], ['compare', 'Channel comparison'], ['review', 'What worked & what next']];
+  var XC_TABS = [['overview', 'Final overview'], ['compare', 'Channel comparison'], ['campaigns', 'Campaign comparison'], ['review', 'What worked & what next']];
   var VERDICT_CLS = { good: 'good', ok: 'warning', bad: 'critical', off: '' };
   var XC_HINT = {
     search: 'e.g., Add 10 negatives from the search terms report; expect wasted spend under 10% next round.',
@@ -1334,6 +1334,7 @@
     if (r.scope && r.scope !== 'all') h += '<div class="card warn-card"><p><b>Round ' + r.round + ' ran ' + esc(platformName(r.scope)) + ' only</b>, so there are no other channels to compare. Run all platforms together to compare them side by side.</p><a class="btn small primary" href="#/simulate">Run all platforms</a></div>';
     if (!X.channels.length) return h + '<div class="card empty-state"><p>No campaigns ran in this round.</p></div>';
     if (tab === 'compare') return h + xcCompare(X, r);
+    if (tab === 'campaigns') return h + xcCampaigns(X, r);
     if (tab === 'review') return h + xcReview(X, r);
     return h + xcOverview(X, r);
   }
@@ -1350,6 +1351,7 @@
       (X.best ? '<div class="xc-callout good"><span>Strongest channel</span><b>' + typeBadge(X.best.type) + '</b><p>' + esc(X.best.verdict.why) + '</p></div>' : '') +
       (X.worst ? '<div class="xc-callout ' + (X.worst.verdict.key === 'bad' ? 'bad' : 'ok') + '"><span>Weakest channel</span><b>' + typeBadge(X.worst.type) + '</b><p>' + esc(X.worst.verdict.why) + '</p></div>' : '') +
       '<div class="xc-callout"><span>Campaign verdicts</span><p><span class="chip good">' + counts.good + ' working</span> <span class="chip warning">' + counts.ok + ' borderline</span> <span class="chip critical">' + counts.bad + ' not working</span>' + (counts.off ? ' <span class="chip">' + counts.off + ' not running</span>' : '') + '</p></div>' +
+      (X.bestCampaign && X.worstCampaign && X.bestCampaign !== X.worstCampaign ? '<div class="xc-callout"><span>Best and weakest campaign</span><p><b>' + esc(X.bestCampaign.name) + '</b> (ROAS ' + fX(X.bestCampaign.roas) + ') vs <b>' + esc(X.worstCampaign.name) + '</b> (ROAS ' + fX(X.worstCampaign.roas) + ')</p><a href="#/channels/campaigns">Compare campaigns →</a></div>' : '') +
       '<div class="xc-callout"><span>Top next move</span><p>' + esc(X.plan[0] ? X.plan[0].text : 'Run another round.') + '</p><a href="#/channels/review">See the full plan →</a></div></div></div>';
     h += '<div class="card"><h3>Campaign scorecard</h3><p class="help">Each campaign is judged on its job: Search and ChatGPT ads on profit; Display and YouTube on profit and on the awareness they build. ' + (r.tracked ? '' : '<span class="warn-text">Conversion tracking was off, so verdicts use engagement only.</span>') + '</p>' +
       dataTable('xc-camps', [
@@ -1377,6 +1379,55 @@
           }).join('') + '<td class="num"><b>' + fMoney0(rr.totals.value * mg - rr.totals.cost) + '</b></td></tr>';
         }).join('') + '</tbody></table></div></div>';
     }
+    return h;
+  }
+
+  function xcCampaigns(X, r) {
+    var c = X.ctx;
+    var live = X.campaigns.filter(function (x) { return x.cost > 0; });
+    var h = '<div class="card"><h3>Campaign comparison</h3><p class="help">Every campaign side by side. Green beats the typical benchmark for its platform; red is worse. Compare campaigns on the same platform to see which setup choices made the difference.</p>' +
+      dataTable('xc-campaigns', [
+        { key: 'name', label: 'Campaign', fmt: function (x) { return '<b>' + esc(x.name) + '</b>' + (x.setup ? '<small class="muted block">' + fMoney0(x.setup.budget) + '/day · ' + esc(x.setup.bid) + '</small>' : ''); } },
+        { key: 'type', label: 'Platform', fmt: function (x) { return typeBadge(x.type); } },
+        { key: 'verdict', label: 'Verdict', sort: function (x) { return { good: 3, ok: 2, bad: 1, off: 0 }[x.verdict.key]; }, fmt: function (x) { return verdictChip(x.verdict); } },
+        { key: 'cost', label: 'Spend', num: true, fmt: function (x) { return fMoney0(x.cost); } },
+        { key: 'clicks', label: 'Clicks', num: true, fmt: function (x) { return fInt(x.clicks); } },
+        { key: 'ctr', label: 'CTR', num: true, fmt: function (x) { return x.bench ? vsBench(x.benchCtr, x.bench.ctr, function (v) { return fPct(v); }) : fPct(x.ctr); } },
+        { key: 'cpc', label: 'Avg. CPC', num: true, fmt: function (x) { return x.clicks && x.bench && x.bench.cpc ? vsBench(x.cpc, x.bench.cpc, fMoney, true) : x.clicks ? fMoney(x.cpc) : '—'; } },
+        { key: 'conversions', label: 'Conv.', num: true, fmt: function (x) { return convCell(r, x.conversions); } },
+        { key: 'cpa', label: 'Cost / conv.', num: true, fmt: function (x) { return r.tracked && x.conversions && x.bench ? vsBench(x.cpa, x.bench.cpa, fMoney, true) : '—'; } },
+        { key: 'roas', label: 'ROAS', num: true, fmt: function (x) { return r.tracked ? '<span class="' + (x.roas >= c.be * 1.3 ? 'good-text' : x.roas >= c.be ? '' : 'bad-text') + '">' + fX(x.roas) + '</span>' : '—'; } },
+        { key: 'profit', label: 'Profit (est.)', num: true, fmt: function (x) { return '<span class="' + (x.profit >= 0 ? 'good-text' : 'bad-text') + '">' + fMoney0(x.profit) + '</span>'; } }
+      ], X.campaigns) + '</div>';
+    if (r.tracked && live.length) {
+      var maxR = Math.max.apply(null, live.map(function (x) { return x.roas; }).concat([c.be * 1.4]));
+      h += '<div class="card"><h3>ROAS by campaign</h3><p class="help">Grouped by platform. The dashed line is break-even ROAS (' + fX(c.be) + '). Longer bars earn more per dollar.</p><div class="xc-roas">' +
+        A.channels.ORDER.map(function (t) {
+          var cs = live.filter(function (x) { return x.type === t; });
+          if (!cs.length) return '';
+          return '<div class="xc-group-name">' + typeBadge(t) + '</div>' + cs.map(function (x) {
+            return '<div class="xc-pair"><div class="xc-pair-label" title="' + esc(x.name) + '">' + esc(M.fit(x.name, 22)) + '</div><div class="xc-bar"><i class="' + (x.roas >= c.be * 1.3 ? 'good' : x.roas >= c.be ? 'ok' : 'bad') + '" style="width:' + (x.roas / maxR * 100).toFixed(1) + '%"></i><span>' + fX(x.roas) + '</span></div></div>';
+          }).join('');
+        }).join('') + '<div class="xc-be" style="left:calc(140px + (100% - 140px) * ' + (c.be / maxR).toFixed(4) + ')"></div></div></div>';
+    }
+    if (X.pairs.length) {
+      h += '<div class="card"><h3>Biggest differences on the same platform</h3><p class="help">Same platform, different results: the setup choices that explain the gap.</p><div class="xc-pairs">' + X.pairs.map(function (p) {
+        return '<div class="xc-pair-card">' + typeBadge(p.type) + '<div class="xc-vs"><div class="xc-vs-side good"><span>Best</span><b>' + esc(p.best.name) + '</b><small>ROAS ' + fX(p.best.roas) + ' · profit ' + fMoney0(p.best.profit) + '</small></div><div class="xc-vs-mid">vs</div><div class="xc-vs-side bad"><span>Weakest</span><b>' + esc(p.worst.name) + '</b><small>ROAS ' + fX(p.worst.roas) + ' · profit ' + fMoney0(p.worst.profit) + '</small></div></div>' +
+          '<p><b>Gap: ' + fMoney0(p.gap) + ' profit</b> (' + fX(p.roasGap) + ' ROAS).</p>' +
+          (p.diffs.length ? '<p class="lbl">What was set up differently (best vs weakest)</p><ul>' + p.diffs.map(function (dd) { return '<li>' + esc(dd) + '</li>'; }).join('') + '</ul>' : '<p class="muted">The two setups are nearly identical, so the gap comes from the keywords, hints or creative themselves, or from the market changing between them.</p>') +
+          '<p class="help">What this tells you: copy the choices that made "' + esc(p.best.name) + '" win into "' + esc(p.worst.name) + '", change one thing at a time, and run again.</p></div>';
+      }).join('') + '</div></div>';
+    } else if (live.length) {
+      h += '<div class="card"><p class="muted">Run two or more campaigns on the same platform (for example, two Search campaigns with different keywords or budgets) to see which setup choices make the difference.</p></div>';
+    }
+    h += '<div class="card"><h3>Campaign by campaign</h3>' + X.campaigns.map(function (x, i) {
+      var d = x.diagnosis;
+      var body = '<p>' + esc(x.verdict.why) + '</p><div class="xc-cols"><div class="xc-col good"><h4>✓ What is working</h4>' + (d.good.length ? '<ul>' + d.good.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul>' : '<p class="muted">Nothing stands out yet.</p>') + '</div>' +
+        '<div class="xc-col bad"><h4>✕ What is not working</h4>' + (d.bad.length ? '<ul>' + d.bad.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul>' : '<p class="muted">No major problems found.</p>') + '</div>' +
+        '<div class="xc-col next"><h4>→ What to do next</h4><ul>' + d.next.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul></div></div>' +
+        '<div class="row"><a class="btn small" href="#/campaign/' + x.id + '/settings">Edit campaign</a></div>';
+      return '<details class="fb-fold xc-camp"' + (i < 2 ? ' open' : '') + '><summary>' + typeBadge(x.type) + ' <b>' + esc(x.name) + '</b> ' + verdictChip(x.verdict) + ' <span class="muted">' + fMoney0(x.cost) + ' spend · ROAS ' + (r.tracked ? fX(x.roas) : '—') + ' · profit ' + fMoney0(x.profit) + '</span></summary>' + body + '</details>';
+    }).join('') + '</div>';
     return h;
   }
 

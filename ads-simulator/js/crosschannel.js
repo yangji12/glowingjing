@@ -189,6 +189,84 @@
     return v;
   }
 
+  // A short description of how a campaign was set up, from the configuration saved with the round
+  function setupSummary(cfg) {
+    if (!cfg) return null;
+    var s = { budget: Number(cfg.dailyBudget) || 0, bid: (D.BID_STRATEGIES[cfg.bidStrategy] || {}).name || cfg.bidStrategy || '', adGroups: (cfg.adGroups || []).length };
+    var groups = cfg.adGroups || [];
+    if (cfg.type === 'search') {
+      var kws = [];
+      groups.forEach(function (g) { kws = kws.concat(M.adGroupKeywords(g)); });
+      s.keywords = kws.length;
+      s.controlled = kws.filter(function (k) { return k.match !== 'broad'; }).length;
+      s.negatives = U.parseKeywordList(cfg.negativesText).length;
+      s.expansion = !!(cfg.networks && cfg.networks.displayExpansion);
+      var labels = [];
+      groups.forEach(function (g) { (g.ads || []).forEach(function (a) { labels.push(M.rsaStrength(a, M.adGroupKeywords(g)).label); }); });
+      s.adStrength = labels.join(', ');
+      s.sitelinks = ((cfg.assets || {}).sitelinks || []).length;
+    }
+    if (cfg.type === 'display' || cfg.type === 'video') {
+      s.audiences = U.sum(groups, function (g) { return ((g.targeting || {}).audiences || []).length + ((g.targeting || {}).topics || []).length; });
+      s.optimized = groups.some(function (g) { return (g.targeting || {}).optimized; });
+    }
+    if (cfg.type === 'display') {
+      s.excludeApps = !!cfg.excludeApps;
+      s.adStrength = groups.map(function (g) { return (g.ads || []).map(function (a) { return M.rdaStrength(a).label; }).join(', '); }).join(', ');
+    }
+    if (cfg.type === 'video') {
+      s.subtype = (D.VIDEO_SUBTYPES[M.videoSubtype(cfg)] || {}).name || '';
+      var have = 0, total = 0;
+      groups.forEach(function (g) { (g.ads || []).forEach(function (a) { var cr = M.videoCreative(a); (cr.parts || cr).forEach(function (p) { have += p.have; total += p.total; }); }); });
+      s.abcd = total ? have + '/' + total : '';
+      s.surfaces = (cfg.videoSurfaces || []).length;
+    }
+    if (cfg.type === 'chatgpt') {
+      s.hints = U.sum(groups, function (g) { return M.chatHints(g).length; });
+      s.objective = ((D.CHATGPT.objectives[cfg.objective] || {}).name) || '';
+      s.capi = !!cfg.capi;
+      s.ads = cfg.source === 'feed' ? 'product feed' : U.sum(groups, function (g) { return (g.ads || []).length; }) + ' ad(s)';
+    }
+    return s;
+  }
+
+  // Sentences for the setup fields where two campaigns of the same platform differ
+  function setupDiffs(a, b, type) {
+    if (!a || !b) return [];
+    var out = [];
+    var d = function (cond, text) { if (cond) out.push(text); };
+    d(a.budget !== b.budget, 'Budget ' + money(a.budget) + '/day vs ' + money(b.budget) + '/day.');
+    d(a.bid !== b.bid, 'Bidding: ' + a.bid + ' vs ' + b.bid + '.');
+    if (type === 'search') {
+      d(a.keywords !== b.keywords || a.controlled !== b.controlled, a.keywords + ' keywords (' + a.controlled + ' phrase/exact) vs ' + b.keywords + ' (' + b.controlled + ' phrase/exact).');
+      d(a.negatives !== b.negatives, a.negatives + ' negative keywords vs ' + b.negatives + '.');
+      d(a.expansion !== b.expansion, 'Display expansion ' + (a.expansion ? 'on' : 'off') + ' vs ' + (b.expansion ? 'on' : 'off') + '.');
+      d(a.adStrength !== b.adStrength, 'Ad strength ' + (a.adStrength || 'n/a') + ' vs ' + (b.adStrength || 'n/a') + '.');
+      d(a.sitelinks !== b.sitelinks, a.sitelinks + ' sitelinks vs ' + b.sitelinks + '.');
+    }
+    if (type === 'display' || type === 'video') {
+      d(a.audiences !== b.audiences, a.audiences + ' audience/topic segments vs ' + b.audiences + '.');
+      d(a.optimized !== b.optimized, 'Optimized targeting ' + (a.optimized ? 'on' : 'off') + ' vs ' + (b.optimized ? 'on' : 'off') + '.');
+    }
+    if (type === 'display') {
+      d(a.excludeApps !== b.excludeApps, 'Mobile apps ' + (a.excludeApps ? 'excluded' : 'included') + ' vs ' + (b.excludeApps ? 'excluded' : 'included') + '.');
+      d(a.adStrength !== b.adStrength, 'Ad strength ' + (a.adStrength || 'n/a') + ' vs ' + (b.adStrength || 'n/a') + '.');
+    }
+    if (type === 'video') {
+      d(a.subtype !== b.subtype, 'Subtype ' + a.subtype + ' vs ' + b.subtype + '.');
+      d(a.abcd !== b.abcd, 'ABCD creative checklist ' + (a.abcd || '0') + ' vs ' + (b.abcd || '0') + '.');
+      d(a.surfaces !== b.surfaces, a.surfaces + ' placements vs ' + b.surfaces + '.');
+    }
+    if (type === 'chatgpt') {
+      d(a.hints !== b.hints, a.hints + ' context hints vs ' + b.hints + '.');
+      d(a.objective !== b.objective, 'Objective ' + a.objective + ' vs ' + b.objective + '.');
+      d(a.capi !== b.capi, 'Conversions API ' + (a.capi ? 'on' : 'off') + ' vs ' + (b.capi ? 'on' : 'off') + '.');
+      d(a.ads !== b.ads, a.ads + ' vs ' + b.ads + '.');
+    }
+    d(a.adGroups !== b.adGroups, a.adGroups + ' ad groups vs ' + b.adGroups + '.');
+    return out;
+  }
+
   function analyze(state, r, prev) {
     var acc = r.accountSnapshot || state.account;
     var ind = M.marketFor(Object.assign({}, state, { account: acc }));
@@ -223,8 +301,23 @@
 
     var campaigns = r.campaigns.map(function (c) {
       var v = sampleNote(verdict(c, c.type, ctx), c, ctx);
-      return { id: c.id, name: c.name, type: c.type, cost: c.cost, clicks: c.clicks, impressions: c.impressions, ctr: c.ctr, cpc: c.cpc, conversions: c.conversions, cpa: c.cpa, value: c.value, roas: c.roas, profit: c.value * margin - c.cost, verdict: v };
+      var m = rollup([c]);
+      m.shareSpend = U.safeDiv(c.cost, T.cost); m.shareValue = U.safeDiv(c.value, T.value); m.shareClicks = U.safeDiv(c.clicks, T.clicks);
+      var cfg = (r.config || []).find(function (x) { return x.id === c.id; });
+      return { id: c.id, name: c.name, type: c.type, cost: c.cost, clicks: c.clicks, impressions: c.impressions, ctr: c.ctr, benchCtr: m.benchCtr, expansionImpr: m.expansionImpr, cpc: c.cpc, conversions: c.conversions, cpa: c.cpa, value: c.value, roas: c.roas, profit: c.value * margin - c.cost, verdict: v,
+        bench: ctx.bench[c.type], diagnosis: c.errors.length || !(c.cost > 0) ? { good: [], bad: c.errors.length ? [c.errors[0]] : ['It spent nothing this round.'], next: ['Fix the setup so the campaign can deliver.'] } : diagnose(c.type, m, [c], r, ctx),
+        setup: setupSummary(cfg), status: c.status };
     });
+
+    // Within each platform: the best and the worst campaign, and how their setups differ
+    var pairs = [];
+    ORDER.forEach(function (type) {
+      var cs = campaigns.filter(function (c) { return c.type === type && c.cost > 0; }).sort(function (a, b) { return b.roas - a.roas; });
+      if (cs.length < 2) return;
+      var best = cs[0], worst = cs[cs.length - 1];
+      pairs.push({ type: type, best: best, worst: worst, gap: best.profit - worst.profit, roasGap: best.roas - worst.roas, diffs: setupDiffs(best.setup, worst.setup, type) });
+    });
+    pairs.sort(function (a, b) { return b.gap - a.gap; });
 
     // Budget plan: move money from what loses to what wins and is budget-limited
     var plan = [];
@@ -266,11 +359,13 @@
     var rank = function (c) { return ctx.tracked && !ctx.awareness ? c.roas : -c.cpm; };
     var sorted = live2.slice().sort(function (a, b) { return rank(b) - rank(a); });
     return {
-      round: r.round, ctx: ctx, channels: channels, campaigns: campaigns, plan: plan,
+      round: r.round, ctx: ctx, channels: channels, campaigns: campaigns, pairs: pairs, plan: plan,
+      bestCampaign: campaigns.filter(function (c) { return c.cost > 0; }).sort(function (a, b) { return b.roas - a.roas; })[0] || null,
+      worstCampaign: campaigns.filter(function (c) { return c.cost > 0; }).sort(function (a, b) { return a.roas - b.roas; })[0] || null,
       best: sorted[0] || null, worst: sorted.length > 1 ? sorted[sorted.length - 1] : null,
       totals: { cost: T.cost, value: T.value, profit: T.value * margin - T.cost, roas: T.roas, conversions: T.conversions, clicks: T.clicks, impressions: T.impressions, cpa: T.cpa }
     };
   }
 
-  AdSim.channels = { analyze: analyze, benchmarks: benchmarks, ROLES: ROLES, ORDER: ORDER };
+  AdSim.channels = { analyze: analyze, benchmarks: benchmarks, setupSummary: setupSummary, setupDiffs: setupDiffs, ROLES: ROLES, ORDER: ORDER };
 })(typeof window !== 'undefined' ? window : globalThis);

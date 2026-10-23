@@ -272,6 +272,12 @@
         }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5 } });
         table(['Campaign', 'Channel', 'Verdict', 'Why'], X.campaigns.map(function (c) { return [c.name, D.CAMPAIGN_TYPES[c.type].name, c.verdict.label, c.verdict.why]; }),
           { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5, overflow: 'linebreak' }, columnStyles: { 0: { cellWidth: 120 }, 1: { cellWidth: 70 }, 2: { cellWidth: 70 } } });
+        if (X.pairs && X.pairs.length) {
+          heading('Campaign differences on the same platform');
+          table(['Platform', 'Best campaign', 'Weakest campaign', 'Profit gap', 'What was set up differently'], X.pairs.map(function (p) {
+            return [D.CAMPAIGN_TYPES[p.type].platform, p.best.name + ' (ROAS ' + x(p.best.roas) + ')', p.worst.name + ' (ROAS ' + x(p.worst.roas) + ')', money(p.gap, 0), p.diffs.length ? p.diffs.map(function (dd) { return '- ' + dd; }).join('\n') : 'Nearly identical setups'];
+          }), { styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 3, textColor: INK, lineColor: LINE, lineWidth: 0.5, overflow: 'linebreak', valign: 'top' }, columnStyles: { 0: { cellWidth: 70 }, 3: { cellWidth: 55 } } });
+        }
         heading('What worked, what did not, and what to do next');
         var dec = (state.decisions || {})['r' + r.round] || {};
         var DEC = { scale: 'Scale up', keep: 'Keep as is', fix: 'Fix, then re-test', cut: 'Cut back budget', pause: 'Pause' };
