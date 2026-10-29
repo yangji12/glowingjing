@@ -121,6 +121,11 @@
   }
   // Turns help paragraphs, explanation boxes and one-line card descriptions into ⓘ icons
   function tipify(root) {
+    // Google Search campaign pages carry no contextual hints at all: no help text, no info icons
+    if (UI.route === 'campaign' && (campById(UI.params[0]) || {}).type === 'search') {
+      root.querySelectorAll('.info-card, p.help, div.help, details.info-tip, h3 + p.muted').forEach(function (el) { el.remove(); });
+      return;
+    }
     root.querySelectorAll('.info-card').forEach(function (el) {
       var w = document.createElement('div');
       w.className = 'tip-line';
@@ -933,7 +938,7 @@
         return field(d.charAt(0).toUpperCase() + d.slice(1), input(base + '.devices.' + d, { type: 'number', step: 5, min: -100, maxVal: 900 }), '−100 excludes the device');
       }).join('') + '</div></div>';
     if (c.type === 'search' || c.type === 'shopping') {
-      h += '<div class="card"><h3>Campaign negative keywords ' + guideLink('KW-2') + '</h3>' + textarea(base + '.negativesText', { rows: 5, placeholder: examplePh('negatives') }) + '<p class="help">Blocks searches containing these words. Use "phrase" or [exact] notation for narrower negatives. Negatives do not match close variants — add plurals separately.</p></div>';
+      h += '<div class="card"><h3>Campaign negative keywords ' + guideLink('KW-2') + '</h3>' + textarea(base + '.negativesText', { rows: 5, placeholder: c.type === 'search' ? 'One per line' : examplePh('negatives') }) + '<p class="help">Blocks searches containing these words. Use "phrase" or [exact] notation for narrower negatives. Negatives do not match close variants — add plurals separately.</p></div>';
     }
     return h;
   }
@@ -961,8 +966,8 @@
       var gb = base + '.adGroups.' + gi;
       h += '<div class="card"><div class="card-head"><h3>Ad group ' + (gi + 1) + '</h3>' + ((c.adGroups.length > 1) ? btn('Remove', 'removeAdGroup', [c.id, g.id], 'small ghost danger') : '') + '</div><div class="grid2">' +
         field('Ad group name', input(gb + '.name')) + (manual ? field('Default max CPC ($)', input(gb + '.defaultBid', { type: 'number', step: 0.05, min: 0 })) : '<div></div>') + '</div>' +
-        '<div class="grid2">' + field('Keywords (one per line) ' + guideLink('STR-2'), textarea(gb + '.keywordsText', { rows: 8, placeholder: examplePh('keywords') })) +
-        field('Ad group negative keywords', textarea(gb + '.negativesText', { rows: 8, placeholder: examplePh('agNegatives') })) + '</div>' +
+        '<div class="grid2">' + field('Keywords (one per line) ' + guideLink('STR-2'), textarea(gb + '.keywordsText', { rows: 8, placeholder: 'One per line' })) +
+        field('Ad group negative keywords', textarea(gb + '.negativesText', { rows: 8, placeholder: 'One per line' })) + '</div>' +
         '<h4>Keyword Planner</h4>' + live('planner-' + g.id, function () { return plannerTable(g); }) + '</div>';
     });
     h += btn('＋ Add ad group', 'addAdGroup', c.id, 'primary');
@@ -1206,7 +1211,7 @@
         var sb = base + '.assets.sitelinks.' + i;
         return '<div class="sitelink-row">' + field('Sitelink text', input(sb + '.text', { max: 25 })) + field('Description line 1', input(sb + '.d1', { max: 35 })) + field('Description line 2', input(sb + '.d2', { max: 35 })) + field('Final URL', input(sb + '.url', { inputType: 'url' })) + btn('✕', 'removeSitelink', [c.id, i], 'small ghost danger') + '</div>';
       }).join('') : '<p class="muted">No sitelinks yet.</p>') + (sl.length < 8 ? btn('＋ Add sitelink', 'addSitelink', c.id, 'small') : '') + '</div>';
-    h += '<div class="card"><h3>Callouts ' + guideLink('AST-2') + '</h3>' + textarea(base + '.assets.callouts', { rows: 4, placeholder: 'Free Shipping\n24/7 Support\nFamily Owned\nPrice Match' }) +
+    h += '<div class="card"><h3>Callouts ' + guideLink('AST-2') + '</h3>' + textarea(base + '.assets.callouts', { rows: 4, placeholder: 'One per line' }) +
       live('callout-check', function () {
         var bad = String(a.callouts || '').split('\n').filter(function (x) { return x.trim().length > 25; });
         return bad.length ? '<p class="bad-text">Too long (max 25): ' + bad.map(esc).join(', ') + '</p>' : '<p class="help">One per line, max 25 characters each.</p>';
